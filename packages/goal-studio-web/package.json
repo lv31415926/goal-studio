@@ -1,0 +1,52 @@
+{
+  "name": "@goal-studio/web",
+  "version": "0.1.0",
+  "description": "goal-studio 可视化创作循环 React 前端",
+  "type": "module",
+  "license": "Apache-2.0",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src --ext .ts,.tsx",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "dependencies": {
+    "@xyflow/react": "^12.3.0",
+    "zustand": "^4.5.0",
+    "jotai": "^2.9.0",
+    "elkjs": "^0.9.0",
+    "clsx": "^2.1.0",
+    "tailwind-merge": "^2.5.0",
+    "lucide-react": "^0.400.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "typescript": "^5.5.0",
+    "vite": "^5.3.0",
+    "vitest": "^2.0.0",
+    "@testing-library/react": "^16.0.0",
+    "eslint": "^9.0.0",
+    "tailwindcss": "^4.0.0",
+    "autoprefixer": "^10.4.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

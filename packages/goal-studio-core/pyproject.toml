@@ -1,0 +1,68 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "goal-studio"
+version = "0.1.0"
+description = "可视化 Loop 创作系统 — 把目标变成可复用产物的可视化创作循环"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.11"
+authors = [{ name = "goal-studio contributors" }]
+keywords = ["workflow", "visual", "loop", "agent", "llm", "dag"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries",
+]
+dependencies = [
+    "pydantic>=2.5",
+    "click>=8.1",
+    "rich>=13.0",
+    "httpx>=0.25",
+    "anyio>=4.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=4.1",
+    "ruff>=0.5",
+    "mypy>=1.8",
+    "respx>=0.20",
+]
+llm = [
+    "openai>=1.10",
+    "anthropic>=0.40",
+]
+
+[project.scripts]
+goal-studio = "goal_studio.cli.main:cli"
+
+[project.urls]
+Homepage = "https://github.com/goal-studio/goal-studio"
+Documentation = "https://goal-studio.dev"
+Issues = "https://github.com/goal-studio/goal-studio/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/goal_studio"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "C4"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
