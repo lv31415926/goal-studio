@@ -14,7 +14,8 @@ from goal_studio import (
     Edge,
     NodeLayer,
 )
-from goal_studio.core.contract import ProductType, PatchOp, NodeStatus
+from goal_studio.core.contract import ProductType, PatchOp
+from goal_studio.core.node_graph import NodeStatus
 
 
 def test_imports() -> None:
