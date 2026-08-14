@@ -23,7 +23,7 @@ from rich.table import Table
 
 from goal_studio.core.adapter_registry import get_default_registry
 from goal_studio.core.contract import GoalContract, ProductType
-from goal_studio.core.session_manager import SessionManager
+from goal_studio.core.session_manager import SessionManager, SessionPhase
 
 console = Console()
 
@@ -98,8 +98,10 @@ def draft(
 
     # 保存会话
     sm = SessionManager(session_dir)
-    session = sm.create(name=f"draft-{product_type}", goal=goal_contract)
+    # 会话名含目标摘要, 避免多案例同名无法区分
+    session = sm.create(name=f"draft-{product_type}-{goal.strip()[:24]}", goal=goal_contract)
     session.update_graph(graph)
+    session.phase = SessionPhase.DRAFT
     sm.save(session)
     console.print(f"[green]✓ 会话已保存: {session.id}[/green]")
     console.print(f"  节点: {list(graph.nodes.keys())}")
@@ -183,6 +185,7 @@ def refine(node_id: str, patch: str, session_dir: str) -> None:
     adapter = registry.get_for_goal(session.goal)
     new_graph = adapter.refine(session.graph, patch_obj)
     session.update_graph(new_graph)
+    session.phase = SessionPhase.REFINE
     sm.save(session)
     console.print(f"[green]✓ 节点 {node_id} 已精化 (graph v{new_graph.version})[/green]")
 
@@ -239,16 +242,29 @@ def verify(session_dir: str) -> None:
         console.print("[green]✓ 棘轮判定: KEEP (分数提升)[/green]")
     else:
         console.print(f"[yellow]↺ 棘轮判定: {decision.value}[/yellow]")
+    session.phase = SessionPhase.VERIFY
     sm.save(session)
 
 
 @cli.command()
 @click.option("--session-dir", default="./sessions")
 @click.option("--output", "-o", default="./artifacts", help="输出目录")
-@click.option("--target", default="file://./artifacts", help="导出目标")
+@click.option("--target", default="", help="导出目标 (file:// URI, 默认取 output 绝对路径)")
 def build(session_dir: str, output: str, target: str) -> None:
     """固化产物"""
     from goal_studio.core.artifact_store import LocalFileArtifactStore
+
+    # 修复: file://./artifacts 会被 urlparse 解析为根目录 /artifacts (只读),
+    # 默认 target 改为由 output 的绝对路径生成合法 file URI
+    if not target:
+        target = Path(output).resolve().as_uri()
+    else:
+        # 兼容旧格式 file://./xxx: urlparse 会把 ./xxx 误当 netloc, 重新转为绝对路径 URI
+        from urllib.parse import urlparse
+
+        parsed = urlparse(target)
+        if parsed.scheme == "file" and parsed.netloc not in ("", "localhost"):
+            target = Path(target.removeprefix("file://")).resolve().as_uri()
 
     sm = SessionManager(session_dir)
     sessions = sm.list_sessions()
@@ -269,6 +285,7 @@ def build(session_dir: str, output: str, target: str) -> None:
     store = LocalFileArtifactStore(output)
     artifact_id = store.save(artifact, note=f"session={session.id}")
     session.best_artifact_id = artifact_id
+    session.phase = SessionPhase.BUILD
     sm.save(session)
     console.print(f"[green]✓ 产物已保存: {artifact_id}[/green]")
 

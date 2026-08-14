@@ -402,11 +402,11 @@ class CodeAdapter(BaseAdapter):
     def export(self, artifact: Artifact, target: str) -> str:
         """导出代码项目"""
         from pathlib import Path
-        from urllib.parse import urlparse
+        from urllib.parse import unquote, urlparse
 
         parsed = urlparse(target)
         if parsed.scheme == "file":
-            out_dir = Path(parsed.path)
+            out_dir = Path(unquote(parsed.path))  # 解码 %20/中文等转义
             out_dir.mkdir(parents=True, exist_ok=True)
             for path, content in artifact.files.items():
                 self._safe_write(out_dir, path, content)

@@ -46,3 +46,7 @@ artifacts/
 *.write_test*
 packages/goal-studio-web/dist-app/
 packages/goal-studio-docs/docs/.vitepress/cache/
+
+# Demo session/artifact data (local only)
+demo-sessions*/
+demo-artifacts*/
