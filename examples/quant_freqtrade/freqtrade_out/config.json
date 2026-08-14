@@ -1,0 +1,81 @@
+{
+  "max_open_trades": 8,
+  "stake_currency": "USDT",
+  "stake_amount": "unlimited",
+  "tradable_balance_ratio": 0.8,
+  "dry_run": true,
+  "dry_run_wallet": 1000,
+  "cancel_open_orders_on_exit": false,
+  "trading_mode": "spot",
+  "margin_mode": "",
+  "timeframe": "1h",
+  "exchange": {
+    "name": "binance",
+    "key": "${FREQTRADE_API_KEY}",
+    "secret": "${FREQTRADE_API_SECRET}",
+    "ccxt_config": {},
+    "ccxt_async_config": {},
+    "pair_whitelist": [
+      "BTC/USDT",
+      "ETH/USDT"
+    ],
+    "pair_blacklist": []
+  },
+  "order_types": {
+    "entry": "limit",
+    "exit": "limit",
+    "stoploss": "market",
+    "stoploss_on_exchange": false
+  },
+  "unfilledtimeout": {
+    "entry": 10,
+    "exit": 10,
+    "unit": "minutes"
+  },
+  "stoploss": -0.1,
+  "trailing_stop": true,
+  "telegram": {
+    "enabled": true,
+    "token": "${FREQTRADE_TELEGRAM_TOKEN}",
+    "chat_id": "${FREQTRADE_TELEGRAM_CHAT_ID}"
+  },
+  "api_server": {
+    "enabled": true,
+    "listen_ip_address": "127.0.0.1",
+    "listen_port": 8080,
+    "verbosity": "error",
+    "username": "freqtrader",
+    "password": "${FREQTRADE_API_PASSWORD}"
+  },
+  "bot_name": "goal-studio-quant-workflow",
+  "initial_state": "running",
+  "force_entry_enable": false,
+  "internals": {
+    "process_throttle_secs": 5
+  },
+  "freqai": {
+    "enabled": true,
+    "kickoff_time": "2026-01-01",
+    "data_split_parameters": {
+      "test_days": 7
+    },
+    "feature_parameters": {
+      "include_timeframes": [
+        "1h"
+      ],
+      "include_corr_pairlist": [],
+      "label_period_candle": 24
+    },
+    "model_training_parameters": {}
+  },
+  "_strategy_mix_note": {
+    "method": "risk_parity",
+    "strategies": [
+      "momentum",
+      "mean_reversion",
+      "ml_alpha"
+    ],
+    "rebalance": "weekly",
+    "note": "多策略组合: 每个子策略独立 freqtrade 实例运行, 由外部编排层按权重分配资金"
+  }
+}
