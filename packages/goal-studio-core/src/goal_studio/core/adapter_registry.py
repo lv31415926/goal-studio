@@ -77,6 +77,20 @@ class AdapterRegistry:
 
             print(f"Warning: failed to load adapter entry_points: {e}", file=sys.stderr)
 
+    def load_from_directory(self, directory: str) -> list[str]:
+        """从本地目录热加载适配器(Plugin SDK)
+
+        扫描目录下所有 *.py 文件,查找 BaseAdapter 子类并注册。
+
+        Args:
+            directory: 适配器目录路径
+
+        Returns:
+            成功加载的适配器 product_type 列表
+        """
+        from goal_studio.core.plugin_sdk import load_from_directory as _load
+        return _load(directory, self)
+
 
 # 全局默认注册中心
 _default_registry: AdapterRegistry | None = None

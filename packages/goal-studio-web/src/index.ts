@@ -3,7 +3,6 @@ export { Canvas } from "./components/Canvas/Canvas";
 export { DialogPanel } from "./components/DialogPanel/DialogPanel";
 export { NodeInspector } from "./components/NodeInspector/NodeInspector";
 export {
-  IntentParser,
   NodeReferenceResolver,
   routeModality,
 } from "./components/IntentParser/IntentParser";

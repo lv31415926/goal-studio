@@ -110,6 +110,20 @@ export interface Artifact {
 /** 棘轮判定结果 */
 export type RatchetDecision = "keep" | "revert" | "early_stop" | "arbitrate";
 
+/** 棘轮响应 — refine 接口实际返回结构 (含 decision/score/graph) */
+export interface RatchetResponse {
+  decision: string;
+  old_score: number;
+  new_score: number;
+  delta: number;
+  best_score: number;
+  current_score: number;
+  reverted: boolean;
+  early_stopped: boolean;
+  message: string;
+  graph: NodeGraph | null;
+}
+
 /** 会话阶段 */
 export type SessionPhase =
   | "init"
@@ -120,3 +134,126 @@ export type SessionPhase =
   | "build"
   | "done"
   | "paused";
+
+/** 会话摘要 (列表视图,与后端 /sessions 响应一致) */
+export interface SessionSummary {
+  id: string;
+  name: string;
+  phase: string;
+  best_score: number;
+  updated_at: string;
+}
+
+/** 适配器信息 */
+export interface AdapterInfo {
+  product_type: string;
+  name: string;
+  description: string;
+}
+
+// ============================================================================
+// R4-18: ParsedIntent 提升至 types (从 intentStore.ts 迁移)
+// ============================================================================
+
+/** 解析中的意图(JSON 中间态) */
+export interface ParsedIntent {
+  intent: "create" | "modify" | "delete" | "connect" | "query" | null;
+  target_ref: {
+    type: "id" | "name" | "spatial" | "property" | "pronoun";
+    value: string;
+    confidence: number;
+  } | null;
+  slots: Record<string, unknown>;
+  ambiguity_flag: boolean;
+  clarification_options: string[];
+  /** Phase 3: 解析来源/置信度,与后端 ParsedIntent.parse_source 对齐 */
+  parse_source?: string;
+  parse_confidence?: number;
+  raw_text?: string;
+  /** R4-09: 是否为增量解析结果 (后端 is_interim 字段) */
+  is_interim?: boolean;
+}
+
+// ============================================================================
+// E-03: WebSocket 消息判别联合类型
+// 与 goal-studio-server ws_protocol.py 对齐,每个 type 对应一个 payload 结构
+// ============================================================================
+
+/** WS 消息基础结构 */
+export interface WSMessageBase {
+  session_id: string | null;
+  timestamp: number;
+}
+
+/** graph_update: 图变更通知 */
+export interface GraphUpdateMessage extends WSMessageBase {
+  type: "graph_update";
+  payload: { graph: NodeGraph };
+}
+
+/** phase_change: 阶段变更通知 */
+export interface PhaseChangeMessage extends WSMessageBase {
+  type: "phase_change";
+  payload: { phase: SessionPhase };
+}
+
+/** intent_parsed: 意图解析结果 */
+export interface IntentParsedMessage extends WSMessageBase {
+  type: "intent_parsed";
+  payload: { intent: Record<string, unknown> | null; version?: number };
+}
+
+/** node_resolved: 节点引用消解结果 */
+export interface NodeResolvedMessage extends WSMessageBase {
+  type: "node_resolved";
+  payload: { resolve: Record<string, unknown> | null };
+}
+
+/** action_executed: 指令执行结果 */
+export interface ActionExecutedMessage extends WSMessageBase {
+  type: "action_executed";
+  payload: {
+    graph: NodeGraph | null;
+    execution: Record<string, unknown>;
+  };
+}
+
+/** R4-18: clarification_needed — 需要用户澄清的消息 */
+export interface ClarificationNeededMessage extends WSMessageBase {
+  type: "clarification_needed";
+  payload: {
+    message: string;
+    options: string[];
+  };
+}
+
+/** error: 服务端错误 */
+export interface ErrorMessage extends WSMessageBase {
+  type: "error";
+  payload: { error: string; code?: string };
+}
+
+/** pong: 心跳响应 */
+export interface PongMessage extends WSMessageBase {
+  type: "pong";
+  payload: Record<string, unknown>;
+}
+
+/** WS 服务端消息判别联合 - 通过 type 字段区分 payload 结构 */
+export type ServerMessage =
+  | GraphUpdateMessage
+  | PhaseChangeMessage
+  | IntentParsedMessage
+  | NodeResolvedMessage
+  | ActionExecutedMessage
+  | ClarificationNeededMessage
+  | ErrorMessage
+  | PongMessage;
+
+/** 类型守卫: 判断消息是否为指定 type */
+export function isWSMessage<T extends ServerMessage["type"]>(
+  msg: { type: string; payload: Record<string, unknown> },
+  type: T,
+): msg is Extract<ServerMessage, { type: T }> {
+  return msg.type === type;
+}

@@ -264,6 +264,8 @@ def build(session_dir: str, output: str, target: str) -> None:
     # 持久化
     store = LocalFileArtifactStore(output)
     artifact_id = store.save(artifact, note=f"session={session.id}")
+    session.best_artifact_id = artifact_id
+    sm.save(session)
     console.print(f"[green]✓ 产物已保存: {artifact_id}[/green]")
 
     # 导出
@@ -289,6 +291,197 @@ def adapters() -> None:
     table.add_column("description")
     for a in registry.list_adapters():
         table.add_row(a["product_type"], a["name"], a["description"])
+    console.print(table)
+
+
+@cli.command()
+@click.option("--name", required=True, help="适配器名称(如 MyAdapter)")
+@click.option("--type", "product_type", required=True, help="产物类型标识(如 custom)")
+@click.option("--desc", default="", help="一句话描述")
+@click.option("--output", "-o", default="./adapters", help="输出目录")
+def scaffold(name: str, product_type: str, desc: str, output: str) -> None:
+    """生成适配器脚手架代码 (Plugin SDK)"""
+    from goal_studio.core.plugin_sdk import scaffold as _scaffold, validate_adapter
+    from goal_studio.core.base_adapter import BaseAdapter
+
+    file_path = _scaffold(name, product_type, output, desc)
+    console.print(f"[green]✓ 适配器脚手架已生成: {file_path}[/green]")
+
+    # 尝试加载并验证
+    try:
+        import importlib.util
+        mod_spec = importlib.util.spec_from_file_location("_scaffold_test", file_path)
+        if mod_spec is None or mod_spec.loader is None:
+            console.print("[yellow]⚠ 无法加载模块[/yellow]")
+            return
+        mod = importlib.util.module_from_spec(mod_spec)
+        mod_spec.loader.exec_module(mod)
+        for attr_name in dir(mod):
+            attr = getattr(mod, attr_name)
+            if (isinstance(attr, type) and issubclass(attr, BaseAdapter)
+                    and attr is not BaseAdapter and not attr.__name__.startswith("_")):
+                issues = validate_adapter(attr())
+                if issues:
+                    console.print("[yellow]⚠ 验证问题:[/yellow]")
+                    for issue in issues:
+                        console.print(f"  - {issue}")
+                else:
+                    console.print("[green]✓ 适配器验证通过[/green]")
+                break
+    except Exception as e:
+        console.print(f"[yellow]⚠ 无法自动验证: {e}[/yellow]")
+
+    console.print("\n[cyan]下一步:[/cyan]")
+    console.print(f"  1. 编辑 {file_path} 实现具体逻辑")
+    console.print(f"  2. 将文件放入适配器目录(如 ./adapters/)")
+    console.print(f"  3. 运行 goal-studio adapters 查看是否加载成功")
+
+
+@cli.command()
+@click.option("--dir", "dir_", default="./adapters", help="适配器目录")
+def load_plugins(dir_: str) -> None:
+    """从目录热加载适配器 (Plugin SDK)"""
+    registry = get_default_registry()
+    loaded = registry.load_from_directory(dir_)
+    if loaded:
+        console.print(f"[green]✓ 加载了 {len(loaded)} 个适配器: {loaded}[/green]")
+    else:
+        console.print(f"[yellow]⚠ 未找到适配器(目录: {dir_})[/yellow]")
+
+
+@cli.command()
+@click.option("--session", "-s", required=True, help="会话 ID")
+@click.option("--target", default="maxfun", help="安装目标 (maxfun/file)")
+@click.option("--skill-dir", default="", help="maxfun skill 目录(默认自动探测)")
+@click.option("--name", default="", help="skill 名称(默认从产物提取)")
+def install(session: str, target: str, skill_dir: str, name: str) -> None:
+    """安装产物到运行环境 (maxfun-adapter)"""
+    import json
+    from goal_studio.core.session_manager import SessionManager
+    from goal_studio.core.artifact_store import LocalFileArtifactStore
+
+    sm = SessionManager("./sessions")
+    try:
+        s = sm.get(session)
+    except KeyError:
+        console.print(f"[red]✗ 会话不存在: {session}[/red]")
+        return
+    if not s.best_artifact_id:
+        console.print("[red]✗ 会话无构建产物,请先运行 build[/red]")
+        return
+
+    store = LocalFileArtifactStore("./artifacts")
+    artifact = store.load(s.best_artifact_id)
+    if not artifact:
+        console.print(f"[red]✗ 产物不存在: {s.best_artifact_id}[/red]")
+        return
+
+    skill_name = name or artifact.metadata.get("skill_name", session)
+
+    if target == "maxfun":
+        # 动态加载 maxfun-adapter
+        import sys
+        plugin_path = Path(__file__).resolve().parent.parent.parent.parent.parent.parent / "plugins" / "maxfun-adapter"
+        if str(plugin_path) not in sys.path:
+            sys.path.insert(0, str(plugin_path))
+        try:
+            from maxfun_bridge import install_to_maxfun, detect_maxfun_dir  # type: ignore[import-not-found]
+        except ImportError:
+            console.print("[red]✗ maxfun-adapter 未安装[/red]")
+            console.print("[cyan]请将 plugins/maxfun-adapter/ 加入 PYTHONPATH[/cyan]")
+            return
+
+        mf_dir = skill_dir or detect_maxfun_dir()
+        if not mf_dir:
+            console.print("[yellow]⚠ 未找到 maxfun skill 目录,使用 ~/.maxfun/skills/[/yellow]")
+            mf_dir = str(Path.home() / ".maxfun" / "skills")
+            Path(mf_dir).mkdir(parents=True, exist_ok=True)
+
+        installed_path = install_to_maxfun(artifact.files, skill_name, mf_dir)
+        console.print(f"[green]✓ 已安装到 maxfun: {installed_path}[/green]")
+        console.print(f"  skill: {skill_name}")
+        console.print(f"  文件: {len(artifact.files)} 个")
+        console.print(f"  目录: {mf_dir}")
+    else:
+        # 默认 file 安装(使用 adapter.install)
+        if s.goal is None:
+            console.print("[red]✗ 会话无目标契约,无法安装[/red]")
+            return
+        adapter = get_default_registry().get_for_goal(s.goal)
+        result = adapter.install(artifact, {"skill_dir": skill_dir or "./output"})
+        console.print(f"[green]✓ {result}[/green]")
+
+
+@cli.command()
+@click.option("--from", "from_target", default="maxfun", help="导入来源 (maxfun)")
+@click.option("--skill-dir", required=True, help="maxfun skill 目录路径")
+@click.option("--name", default="", help="skill 名称(默认从目录提取)")
+def import_skill(from_target: str, skill_dir: str, name: str) -> None:
+    """从 maxfun 导入 skill 为 goal-studio DAG (maxfun-adapter)"""
+    import sys
+    plugin_path = Path(__file__).resolve().parent.parent.parent.parent.parent.parent / "plugins" / "maxfun-adapter"
+    if str(plugin_path) not in sys.path:
+        sys.path.insert(0, str(plugin_path))
+    try:
+        from maxfun_bridge import import_from_maxfun
+    except ImportError:
+        console.print("[red]✗ maxfun-adapter 未安装[/red]")
+        return
+
+    result = import_from_maxfun(skill_dir)
+    meta = result["skill_meta"]
+    dag_hint = result["dag_hint"]
+
+    console.print(f"[green]✓ 导入成功: {meta['name']}[/green]")
+    console.print(f"  描述: {meta['description']}")
+    console.print(f"  版本: {meta['version']}")
+    console.print(f"  触发词: {', '.join(meta['triggers']) or '(无)'}")
+    console.print(f"  文件数: {len(result['files'])}")
+    console.print(f"  DAG 提示: {len(dag_hint)} 个 L1 节点")
+
+    if dag_hint:
+        console.print("\n[cyan]建议的 DAG 结构:[/cyan]")
+        for node in dag_hint:
+            console.print(f"  {node['id']} [{node['type']}] {node['title']}")
+
+
+@cli.command()
+@click.option("--dir", "dir_", default="", help="maxfun skill 目录(默认自动探测)")
+def list_skills(dir_: str) -> None:
+    """列出 maxfun 目录中的 skill (maxfun-adapter)"""
+    import sys
+    plugin_path = Path(__file__).resolve().parent.parent.parent.parent.parent.parent / "plugins" / "maxfun-adapter"
+    if str(plugin_path) not in sys.path:
+        sys.path.insert(0, str(plugin_path))
+    try:
+        from maxfun_bridge import list_maxfun_skills, detect_maxfun_dir
+    except ImportError:
+        console.print("[red]✗ maxfun-adapter 未安装[/red]")
+        return
+
+    mf_dir = dir_ or detect_maxfun_dir()
+    if not mf_dir:
+        console.print("[yellow]⚠ 未找到 maxfun skill 目录[/yellow]")
+        console.print("[cyan]设置 MAXFUN_SKILL_DIR 或创建 ~/.maxfun/skills/[/cyan]")
+        return
+
+    skills = list_maxfun_skills(mf_dir)
+    if not skills:
+        console.print(f"[yellow]⚠ 目录中无 skill: {mf_dir}[/yellow]")
+        return
+
+    table = Table(title=f"maxfun skills ({mf_dir})")
+    table.add_column("名称", style="cyan")
+    table.add_column("版本")
+    table.add_column("描述", style="dim")
+    table.add_column("触发词")
+    table.add_column("文件数", justify="right")
+    for sk in skills:
+        table.add_row(
+            sk["name"], sk["version"], sk["description"][:40],
+            ", ".join(sk["triggers"]) or "-",
+            str(sk["file_count"]),
+        )
     console.print(table)
 
 

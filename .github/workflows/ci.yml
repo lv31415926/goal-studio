@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [main, develop]
 
+# PR-ROUND-4/F-04: 取消同分支旧运行,节省 CI 资源
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   python-test:
     runs-on: ubuntu-latest
@@ -18,6 +23,9 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+          # PR-ROUND-4/F-04: pip cache 加速依赖安装
+          cache: pip
+          cache-dependency-path: packages/goal-studio-core/pyproject.toml
       - name: Install
         run: |
           cd packages/goal-studio-core
@@ -33,7 +41,43 @@ jobs:
       - name: Test
         run: |
           cd packages/goal-studio-core
-          pytest --cov=goal_studio
+          pytest --cov=goal_studio --cov-fail-under=60
+
+  # P-LOW-2-10: server 包测试 job
+  server-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          # PR-ROUND-4/F-04: pip cache
+          cache: pip
+          cache-dependency-path: |
+            packages/goal-studio-core/pyproject.toml
+            packages/goal-studio-server/pyproject.toml
+      - name: Install core + server
+        run: |
+          pip install ruff mypy
+          pip install -e packages/goal-studio-core
+          pip install -e packages/goal-studio-server
+          pip install pytest pytest-cov httpx
+      - name: Ruff check server
+        run: ruff check packages/goal-studio-server/src
+      - name: Mypy check server
+        # PR-S2: 移除 || true — 类型错误必须阻断 CI
+        run: mypy packages/goal-studio-server/src --ignore-missing-imports
+      - name: Dependency vulnerability scan (Python)
+        run: |
+          pip install pip-audit
+          pip-audit
+      - name: Test server
+        run: |
+          pytest packages/goal-studio-server/tests --cov=goal_studio_server --cov-fail-under=60 -v
 
   web-test:
     runs-on: ubuntu-latest
@@ -49,12 +93,105 @@ jobs:
       - name: Install
         run: |
           cd packages/goal-studio-web
-          pnpm install
+          pnpm install --frozen-lockfile
       - name: Type check
         run: |
           cd packages/goal-studio-web
           pnpm typecheck
+      - name: Lint
+        run: |
+          cd packages/goal-studio-web
+          pnpm lint
+      - name: Dependency vulnerability scan (npm)
+        run: |
+          cd packages/goal-studio-web
+          npm audit --omit=dev
+      - name: Production app build
+        run: |
+          cd packages/goal-studio-web
+          pnpm build:app
       - name: Test
         run: |
           cd packages/goal-studio-web
           pnpm test
+
+  # PR-S2: Python 包构建验证 — 确保 sdist 与 wheel 可构建、可安装
+  python-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          # PR-ROUND-4/F-04: pip cache
+          cache: pip
+          cache-dependency-path: |
+            packages/goal-studio-core/pyproject.toml
+            packages/goal-studio-server/pyproject.toml
+      - name: Install build
+        run: pip install build
+      - name: Build core package
+        run: |
+          cd packages/goal-studio-core
+          python -m build --sdist --wheel
+      - name: Build server package
+        run: |
+          cd packages/goal-studio-server
+          python -m build --sdist --wheel
+      - name: Verify wheel install (core)
+        run: |
+          pip install packages/goal-studio-core/dist/*.whl
+          python -c "import goal_studio; print('core wheel OK')"
+      - name: Verify wheel install (server)
+        run: |
+          pip install packages/goal-studio-server/dist/*.whl
+          python -c "import goal_studio_server; print('server wheel OK')"
+      # PR-ROUND-4/F-04: 上传 dist 产物供后续 job/部署使用
+      - name: Upload dist artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-dist
+          path: |
+            packages/goal-studio-core/dist/*
+            packages/goal-studio-server/dist/*
+
+  # PR-S1: Docker 镜像构建验证 — 确保 Dockerfile 正确构建且静态服务可用
+  docker-build:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || github.ref_name == 'main'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: goal-studio:ci-test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Smoke test — start container
+        run: |
+          docker run -d --name gs-ci \
+            -e GOAL_STUDIO_ENV=production \
+            -e GOAL_STUDIO_API_TOKEN=ci-test-token \
+            -e GOAL_STUDIO_CORS_ORIGINS=http://localhost:8000 \
+            -p 8000:8000 \
+            goal-studio:ci-test
+          sleep 3
+          # 健康检查
+          curl -f http://localhost:8000/api/health && echo " HEALTH OK"
+          # 静态文件服务检查(SPA)
+          curl -f -s http://localhost:8000/ | grep -q "goal-studio" && echo " SPA OK"
+          docker stop gs-ci && docker rm gs-ci
+      # R5-13: Trivy 镜像漏洞扫描 — CRITICAL/HIGH 级别阻断 CI
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: goal-studio:ci-test
+          format: table
+          exit-code: "1"
+          severity: CRITICAL,HIGH

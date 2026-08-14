@@ -24,12 +24,29 @@
 
 ### 安装
 
-```bash
-# Python 核心
-pip install goal-studio
+goal-studio 尚未发布到 PyPI,目前需从源码安装:
 
-# 启动 Web 界面
-goal-studio serve
+```bash
+git clone https://github.com/goal-studio/goal-studio.git
+cd goal-studio
+
+# 安装 Python 核心与服务端
+pip install -e packages/goal-studio-core
+pip install -e packages/goal-studio-server
+```
+
+### 启动 Web 界面
+
+> `serve` 命令开发中,当前请使用 uvicorn 直接启动后端:
+
+```bash
+# 启动后端
+uvicorn goal_studio_server.app:create_app --factory --port 8000
+
+# 启动前端(另一个终端)
+cd packages/goal-studio-web
+pnpm install
+pnpm run dev
 ```
 
 ### CLI 用法
@@ -115,12 +132,36 @@ class MyAdapter(BaseAdapter):
 goal-studio/
 ├── packages/
 │   ├── goal-studio-core/      # Python 核心引擎 (pip install)
-│   ├── goal-studio-web/       # React 前端 (npm install)
+│   ├── goal-studio-web/       # React 前端 (pnpm install)
 │   └── goal-studio-docs/      # VitePress 文档
 ├── examples/                  # 示例项目
 ├── plugins/                   # 社区适配器 (maxfun-adapter 等)
-└── .github/workflows/         # CI
+├── .github/workflows/         # CI
+├── Dockerfile                 # 多阶段构建 (web builder + server)
+├── docker-compose.yml         # 生产部署编排
+├── .dockerignore              # Docker 构建上下文排除
+├── .env.example               # 环境变量配置模板
+└── SECURITY.md                # 安全政策与防御机制
 ```
+
+### Docker 快速启动
+
+```bash
+# 1. 准备环境变量
+cp .env.example .env
+# 编辑 .env,至少设置:
+#   GOAL_STUDIO_ENV=production
+#   GOAL_STUDIO_API_TOKEN=<强随机值>
+#   GOAL_STUDIO_CORS_ORIGINS=https://your-domain.com
+
+# 2. 构建并启动
+docker compose up -d --build
+
+# 3. 验证
+curl -H "Authorization: Bearer $GOAL_STUDIO_API_TOKEN" http://localhost:8000/api/health
+```
+
+详见 [部署文档](packages/goal-studio-docs/docs/deployment.md)。
 
 ## 技术栈
 

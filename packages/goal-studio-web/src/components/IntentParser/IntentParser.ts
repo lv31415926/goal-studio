@@ -10,8 +10,7 @@
  * Phase 1 实现 Layer 4 (节点引用解析),Layer 3 走后端 LLM
  */
 
-import type { Node, NodeGraph, ParsedIntent } from "../../types";
-import type { SignalEntry } from "../../stores/intentStore";
+import type { Node, NodeGraph } from "../../types";
 
 /** 节点引用解析器 */
 export class NodeReferenceResolver {
@@ -19,7 +18,6 @@ export class NodeReferenceResolver {
   private recentStack: string[];
   private selection: string | null;
   private hover: string | null;
-  private mousePos: { x: number; y: number } | null;
 
   // 权重配置(可调)
   private readonly weights = {
@@ -38,14 +36,12 @@ export class NodeReferenceResolver {
     graph: NodeGraph,
     recentStack: string[],
     selection: string | null,
-    hover: string | null,
-    mousePos: { x: number; y: number } | null
+    hover: string | null
   ) {
     this.graph = graph;
     this.recentStack = recentStack;
     this.selection = selection;
     this.hover = hover;
-    this.mousePos = mousePos;
   }
 
   /** 主解析入口 */

@@ -14,6 +14,8 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from pathlib import Path
+from typing import Any
 
 from goal_studio.core.contract import Artifact, GoalContract, Patch, Report
 from goal_studio.core.node_graph import NodeGraph
@@ -113,6 +115,48 @@ class BaseAdapter(ABC):
 
     # === 非抽象工具方法 ===
 
+    @staticmethod
+    def _normalize_content(content: str) -> str:
+        """修复 LLM(特别是推理模型)返回的文件内容中字面 backslash-n 问题
+
+        推理模型(如 DeepSeek-v4-flash)可能在 JSON 字符串中双转义换行符,
+        导致 json.loads() 后内容中出现字面 backslash-n(两个字符)而非真实换行符。
+
+        策略: 仅当内容不含真实换行但含字面 backslash-n 时替换,
+        避免破坏代码中字符串内的合法转义序列。同理处理 Tab。
+        """
+        if "\n" not in content and "\\n" in content:
+            content = content.replace("\\n", "\n")
+        if "\t" not in content and "\\t" in content:
+            content = content.replace("\\t", "\t")
+        return content
+
+    @staticmethod
+    def _safe_write(base: "Path", relative: str, content: str) -> None:
+        """安全写入文件 — 校验路径遍历后写入
+
+        PR-G/G-3: 统一所有 adapter 的 export/install 路径校验。
+        确保写入路径不逃逸出 base 目录。
+
+        Args:
+            base: 基准目录(已 resolve)
+            relative: 相对路径(来自 artifact.files 的键,可能含 ../)
+            content: 文件内容
+
+        Raises:
+            ValueError: 路径遍历被拦截
+        """
+        base_resolved = base.resolve() if not base.is_absolute() else base
+        target = (base_resolved / relative).resolve()
+        try:
+            target.relative_to(base_resolved)
+        except ValueError:
+            raise ValueError(f"路径遍历被拦截: {relative} 不在 {base} 内")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        # 修复推理模型双转义导致的字面 \n 问题
+        content = BaseAdapter._normalize_content(content)
+        target.write_text(content, encoding="utf-8")
+
     def get_schema(self) -> dict[str, Any]:
         """返回适配器的节点槽位 schema,供前端渲染编辑表单
 
@@ -137,5 +181,4 @@ class BaseAdapter(ABC):
         return 10
 
 
-# 保留 Any 导入供 type hint
-from typing import Any  # noqa: E402
+

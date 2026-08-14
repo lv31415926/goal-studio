@@ -1,0 +1,40 @@
+services:
+  goal-studio:
+    build: .
+    ports:
+      - "127.0.0.1:8000:8000"
+    init: true
+    environment:
+      - GOAL_STUDIO_ENV=production
+      - GOAL_STUDIO_API_TOKEN=${GOAL_STUDIO_API_TOKEN:?error}
+      - GOAL_STUDIO_CORS_ORIGINS=${GOAL_STUDIO_CORS_ORIGINS:-http://localhost:8000}
+      - GOAL_STUDIO_ARTIFACT_ROOT=/data/artifacts
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
+    volumes:
+      - session-data:/data/sessions
+      - artifact-data:/data/artifacts
+    restart: unless-stopped
+    # R5-08: 日志轮转,防止日志文件无限增长占满磁盘
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # R5-08: 安全加固 — 最小权限运行
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+    pids_limit: 100
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512M
+volumes:
+  session-data:
+  artifact-data:
