@@ -58,6 +58,14 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP", "B", "C4"]
+# UP042: str+Enum 混用是合法模式(保证 JSON 序列化兼容),忽略
+ignore = ["UP042"]
+
+[tool.ruff.lint.per-file-ignores]
+# 中文 prompt / mock 数据 / regex 模式: 长行是内容本身,不强制换行
+"src/goal_studio/llm/mock_provider.py" = ["E501"]
+"src/goal_studio/adapters/*.py" = ["E501"]
+"src/goal_studio/intent_parser/llm_parser.py" = ["E501"]
 
 [tool.mypy]
 python_version = "3.11"
@@ -66,3 +74,19 @@ strict = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["goal_studio"]
+# CLI 入口与外部 LLM provider 依赖网络/终端交互,不纳入单测覆盖率
+omit = [
+    "src/goal_studio/cli/*",
+    "src/goal_studio/llm/openai_provider.py",
+    "src/goal_studio/llm/anthropic_provider.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]

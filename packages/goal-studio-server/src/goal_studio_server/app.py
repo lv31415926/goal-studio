@@ -115,12 +115,12 @@ def create_app() -> FastAPI:
         return response
 
     # R3-14: REST 请求体大小限制中间件(1MB,避免大 payload 耗尽内存)
-    _MAX_REQUEST_BODY = 1024 * 1024  # 1MB
+    _max_request_body = 1024 * 1024  # 1MB
 
     @app.middleware("http")
     async def body_size_limit_middleware(request: Request, call_next):
         content_length = request.headers.get("content-length")
-        if content_length and int(content_length) > _MAX_REQUEST_BODY:
+        if content_length and int(content_length) > _max_request_body:
             return JSONResponse(status_code=413, content={"detail": "request body too large"})
         return await call_next(request)
 

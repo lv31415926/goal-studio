@@ -14,12 +14,16 @@ from typing import Any
 
 from goal_studio.core.base_adapter import BaseAdapter
 from goal_studio.core.contract import (
-    Artifact, GoalContract, Patch, PatchOp, ProductType, Report,
+    Artifact,
+    GoalContract,
+    Patch,
+    PatchOp,
+    ProductType,
+    Report,
 )
 from goal_studio.core.node_graph import Edge, Node, NodeGraph, NodeLayer, NodeStatus
 from goal_studio.llm import LLMMessage, get_llm
 from goal_studio.llm.base import BaseLLMProvider
-
 
 DRAFT_SYSTEM_PROMPT = """你是 goal-studio 的工作流设计助手。你的任务是把用户目标分解为三层 DAG 工作流,用于生成可执行的工作流定义。
 
@@ -161,9 +165,9 @@ class WorkflowAdapter(BaseAdapter):
 
     def _apply_hierarchical_layout(self, g: NodeGraph) -> None:
         """层次布局 (L1 横向, L2/L3 在父节点下方)"""
-        LAYER_GAP = 180
-        L1_GAP = 280
-        CHILD_GAP = 180
+        layer_gap = 180
+        l1_gap = 280
+        child_gap = 180
 
         l1_nodes = [n for n in g.nodes.values() if n.layer == NodeLayer.L1_PLANNING]
         try:
@@ -173,7 +177,7 @@ class WorkflowAdapter(BaseAdapter):
             pass
 
         for i, node in enumerate(l1_nodes):
-            node.position = (i * L1_GAP, 0.0)
+            node.position = (i * l1_gap, 0.0)
 
         for l1 in l1_nodes:
             l2_children = [
@@ -182,20 +186,20 @@ class WorkflowAdapter(BaseAdapter):
             ]
             if not l2_children:
                 continue
-            total_w = (len(l2_children) - 1) * CHILD_GAP
+            total_w = (len(l2_children) - 1) * child_gap
             start_x = l1.position[0] - total_w / 2
             for j, child in enumerate(l2_children):
-                child.position = (start_x + j * CHILD_GAP, LAYER_GAP)
+                child.position = (start_x + j * child_gap, layer_gap)
                 l3_children = [
                     g.nodes[cid] for cid in child.children_ids
                     if cid in g.nodes and g.nodes[cid].layer == NodeLayer.L3_REFINEMENT
                 ]
                 if not l3_children:
                     continue
-                l3_total_w = (len(l3_children) - 1) * (CHILD_GAP * 0.7)
+                l3_total_w = (len(l3_children) - 1) * (child_gap * 0.7)
                 l3_start_x = child.position[0] - l3_total_w / 2
                 for k, l3 in enumerate(l3_children):
-                    l3.position = (l3_start_x + k * (CHILD_GAP * 0.7), LAYER_GAP * 2)
+                    l3.position = (l3_start_x + k * (child_gap * 0.7), layer_gap * 2)
 
     def _fallback_draft(self, goal: GoalContract, error: str = "") -> NodeGraph:
         """LLM 失败时的三层模板降级 (工作流)"""

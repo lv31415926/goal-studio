@@ -13,6 +13,42 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 
+// Web Speech API 最小类型定义(浏览器原生 API, TS 标准库未收录)
+interface SpeechRecognitionAlternative {
+  transcript: string;
+  confidence: number;
+}
+interface SpeechRecognitionResult {
+  isFinal: boolean;
+  length: number;
+  [index: number]: SpeechRecognitionAlternative;
+}
+interface SpeechRecognitionResultList {
+  length: number;
+  [index: number]: SpeechRecognitionResult;
+}
+interface SpeechRecognitionEvent {
+  resultIndex: number;
+  results: SpeechRecognitionResultList;
+}
+interface SpeechRecognitionErrorEvent {
+  error: string;
+}
+interface SpeechRecognitionInstance {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  maxAlternatives: number;
+  onresult: ((event: SpeechRecognitionEvent) => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEvent) => void) | null;
+  onend: (() => void) | null;
+  start(): void;
+  stop(): void;
+}
+interface SpeechRecognitionConstructor {
+  new (): SpeechRecognitionInstance;
+}
+
 export type TranscribeProvider = "webspeech" | "vercel-ai";
 
 interface UseStreamTranscribeOptions {
@@ -101,7 +137,7 @@ export function useStreamTranscribe(options: UseStreamTranscribeOptions = {}) {
   const [interimTranscript, setInterimTranscript] = useState("");
   const [confidence, setConfidence] = useState(0);
 
-  const recognitionRef = useRef<any>(null);
+  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   // stoppedRef: 标记是否为主动停止,阻止 webspeech onend 自动重启
   const stoppedRef = useRef(false);
@@ -167,8 +203,8 @@ export function useStreamTranscribe(options: UseStreamTranscribeOptions = {}) {
 
     // 默认: Web Speech API
     const SpeechRecognition =
-      (window as any).SpeechRecognition ||
-      (window as any).webkitSpeechRecognition;
+      (window as unknown as Record<string, SpeechRecognitionConstructor | undefined>).SpeechRecognition ||
+      (window as unknown as Record<string, SpeechRecognitionConstructor | undefined>).webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
       onErrorRef.current?.(new Error("SpeechRecognition not supported in this browser"));
@@ -181,7 +217,7 @@ export function useStreamTranscribe(options: UseStreamTranscribeOptions = {}) {
     recognition.interimResults = true;
     recognition.maxAlternatives = 1;
 
-    recognition.onresult = (event: any) => {
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
       // R4-21: 收到结果时重置重启计数,表示识别正常运行
       restartAttemptsRef.current = 0;
       let interim = "";
@@ -190,7 +226,7 @@ export function useStreamTranscribe(options: UseStreamTranscribeOptions = {}) {
       let interimConf = 0.5;
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const result = event.results[i];
-        const alt = result[0] || {};
+        const alt: SpeechRecognitionAlternative = result[0] ?? { transcript: "", confidence: 0.9 };
         const conf = typeof alt.confidence === "number" ? alt.confidence : 0.9;
         if (result.isFinal) {
           final += alt.transcript ?? "";
@@ -204,7 +240,7 @@ export function useStreamTranscribe(options: UseStreamTranscribeOptions = {}) {
       if (interim) emitChunk(interim, false, interimConf);
     };
 
-    recognition.onerror = (event: any) => {
+    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
       onErrorRef.current?.(new Error(`SpeechRecognition error: ${event.error}`));
     };
 

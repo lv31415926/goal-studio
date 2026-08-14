@@ -296,7 +296,9 @@ class {class_name}(BaseAdapter):
         """从 DAG 构建产物"""
         content = f"# {{self.product_type}} 产物\\n\\n由 {adapter_name} 生成。\\n"
         return Artifact(
-            product_type=graph.nodes[graph.root_id].node_type if graph.root_id else self.product_type,
+            product_type=(
+                graph.nodes[graph.root_id].node_type if graph.root_id else self.product_type
+            ),
             content=content,
             files={{"output.md": content}},
             graph_snapshot=graph.to_dict(),
@@ -334,11 +336,12 @@ def scaffold(
     Returns:
         生成的文件路径
     """
-    # 类名: PascalCase
-    class_name = name.replace("-", "_").replace(" ", "_")
-    if not class_name.endswith("Adapter"):
-        class_name += "Adapter"
-    class_name = "".join(w.capitalize() for w in class_name.split("_"))
+    # 类名: PascalCase(先拆词再逐词 capitalize,避免 "customAdapter" 被压成 "Customadapter")
+    words = name.replace("-", "_").replace(" ", "_").lower().split("_")
+    words = [w for w in words if w]
+    if not words or words[-1] != "adapter":
+        words.append("adapter")
+    class_name = "".join(w.capitalize() for w in words)
 
     # 文件名: snake_case
     file_name = name.replace("-", "_").replace(" ", "_").lower()

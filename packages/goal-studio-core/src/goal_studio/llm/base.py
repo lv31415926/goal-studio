@@ -1,8 +1,9 @@
 """LLM Provider 抽象基类"""
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, Literal, Protocol, cast
+from typing import Any, Literal, Protocol, cast
 
 
 @dataclass
@@ -149,7 +150,7 @@ class BaseLLMProvider:
 
     @staticmethod
     def _extract_json(text: str) -> dict[str, Any] | None:
-        """P-LOW-2-5: 平衡括号算法提取 JSON(专家建议,替代贪婪正则)
+        r"""P-LOW-2-5: 平衡括号算法提取 JSON(专家建议,替代贪婪正则)
 
         正则 r"\{.*\}" 在嵌套 JSON 或多个 {} 时会贪婪匹配错误范围,
         平衡括号算法准确找到第一个完整的 {...} 或 [...] 块。

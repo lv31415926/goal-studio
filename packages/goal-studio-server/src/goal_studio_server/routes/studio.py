@@ -27,6 +27,9 @@ from goal_studio_server.models import (
     RefineRequest,
     ReportModel,
 )
+from goal_studio_server.models import (
+    ProductType as ModelProductType,
+)
 
 router = APIRouter()
 
@@ -193,7 +196,9 @@ async def refine(
             s.phase = SessionPhase.REFINE
             s.add_dialog("user", f"{patch.op.value}: {patch.target_node_id or ''} {patch.slots}")
             # R3-09: dialog role 统一为 assistant(与 WS 一致)
-            s.add_dialog("assistant", f"棘轮判定: {decision.value} (Δ={new_score - old_score:+.1f})")
+            s.add_dialog(
+                "assistant", f"棘轮判定: {decision.value} (Δ={new_score - old_score:+.1f})"
+            )
             mgr.save(s)
             return decision, final_graph, new_score
 
@@ -303,7 +308,7 @@ async def build(
             s.metadata["artifact_ids"].append(artifact_id)
         mgr.save(s)
     return ArtifactModel(
-        product_type=artifact.product_type,
+        product_type=ModelProductType(artifact.product_type),
         content=artifact.content,
         files=artifact.files,
         metadata=artifact.metadata,

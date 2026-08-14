@@ -45,5 +45,4 @@ artifacts/
 .tmp/
 *.write_test*
 packages/goal-studio-web/dist-app/
-packages/goal-studio-web/prod/
 packages/goal-studio-docs/docs/.vitepress/cache/

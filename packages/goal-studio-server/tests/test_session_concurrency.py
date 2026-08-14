@@ -33,7 +33,8 @@ def test_concurrent_save_same_session(tmp_path: Path):
     assert not errors, f"并发写失败: {errors[:3]}"
 
     # 验证文件可正常加载
-    reloaded = Session.from_dict(json.loads((tmp_path / f"{s.id}.json").read_text(encoding="utf-8")))
+    raw = json.loads((tmp_path / f"{s.id}.json").read_text(encoding="utf-8"))
+    reloaded = Session.from_dict(raw)
     assert reloaded.id == s.id
     assert reloaded.name == "concurrent-test"
 

@@ -84,10 +84,19 @@ class ActionExecutor:
             and resolved_node_id
             and conflict_hover_id != resolved_node_id
         ):
-            hover_title = graph.nodes[conflict_hover_id].title if conflict_hover_id in graph.nodes else conflict_hover_id
-            target_title = graph.nodes[resolved_node_id].title if resolved_node_id in graph.nodes else resolved_node_id
+            hover_title = (
+                graph.nodes[conflict_hover_id].title
+                if conflict_hover_id in graph.nodes
+                else conflict_hover_id
+            )
+            target_title = (
+                graph.nodes[resolved_node_id].title
+                if resolved_node_id in graph.nodes
+                else resolved_node_id
+            )
             conflict_warning = (
-                f"多模态冲突: 鼠标悬停「{hover_title}」但指令指向「{target_title}」,已按指令执行(语音优先)"
+                f"多模态冲突: 鼠标悬停「{hover_title}」但指令指向「{target_title}」,"
+                "已按指令执行(语音优先)"
             )
 
         if intent.intent == "modify":
@@ -151,7 +160,10 @@ class ActionExecutor:
                 "title": new_node_data.get("title", "新节点"),
                 "description": new_node_data.get("description", ""),
                 "layer": new_node_data.get("layer", 2),
-                "slots": {k: v for k, v in new_node_data.items() if k not in ("title", "description", "layer")},
+                "slots": {
+                    k: v for k, v in new_node_data.items()
+                    if k not in ("title", "description", "layer")
+                },
             },
             source="voice" if intent.raw_text else "text",
         )
@@ -200,7 +212,8 @@ class ActionExecutor:
             op=PatchOp.REMOVE_NODE,
             target_node_id=node_id,
             source="voice" if intent.raw_text else "text",
-            rationale=f"删除 {node.title}" + (f"(级联 {len(cascade_nodes)} 子节点)" if cascade_nodes else ""),
+            rationale=f"删除 {node.title}"
+            + (f"(级联 {len(cascade_nodes)} 子节点)" if cascade_nodes else ""),
         )
         new_graph = self._apply_patch(graph, patch)
         self._push_undo(graph, patch)
@@ -209,7 +222,8 @@ class ActionExecutor:
             patch=patch,
             new_graph=new_graph,
             undo_available=True,
-            reason=f"已删除 {node.title}" + (f" 及 {len(cascade_nodes)} 个子节点" if cascade_nodes else ""),
+            reason=f"已删除 {node.title}"
+            + (f" 及 {len(cascade_nodes)} 个子节点" if cascade_nodes else ""),
         )
 
     def _execute_connect(

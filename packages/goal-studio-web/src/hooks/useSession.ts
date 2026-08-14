@@ -83,7 +83,6 @@ export function useSession() {
           if (shouldIncremental) {
             // R4-10: 丢弃晚到的 incremental 消息 (版本号 < 已收到的 final 版本)
             if (version > 0 && version < finalVersionRef.current) {
-              console.log("[intent_parsed] discard late incremental, version:", version);
               break;
             }
             setIncremental(intent as unknown as ParsedIntent | null);
@@ -98,13 +97,11 @@ export function useSession() {
           }
           // P1-4: 暴露最近一次意图供 DialogPanel 展示
           setLastIntent(intent ?? null);
-          console.log("[intent_parsed]", source, intent);
           break;
         }
         case "node_resolved": {
           // P1-4: 暴露最近一次消解结果供 DialogPanel 展示
           setLastResolve((payload.resolve as Record<string, unknown>) ?? null);
-          console.log("[node_resolved]", payload.resolve);
           break;
         }
         case "action_executed": {
@@ -129,7 +126,6 @@ export function useSession() {
           ) {
             setError((exec.reason as string) || "执行失败");
           }
-          console.log("[action_executed]", exec);
           break;
         }
         case "error": {
@@ -141,7 +137,6 @@ export function useSession() {
         case "pong":
           break;
         default:
-          console.log("[WS]", type, payload);
       }
     },
     [setGraph, setPhase, setIncremental, setParsed, clearIncremental, setPendingConfirmation, setConflictWarning, setLastIntent, setLastResolve, setError],

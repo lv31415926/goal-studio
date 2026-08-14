@@ -11,14 +11,12 @@
 from __future__ import annotations
 
 import hashlib
-import json
+import logging
 import re
 import time
 from collections import OrderedDict
 from dataclasses import asdict, dataclass, field
 from typing import Any
-
-import logging
 
 from goal_studio.llm import LLMMessage, get_llm
 from goal_studio.llm.base import BaseLLMProvider
@@ -26,7 +24,8 @@ from goal_studio.llm.base import BaseLLMProvider
 _logger = logging.getLogger(__name__)
 
 
-INTENT_PARSER_SYSTEM_PROMPT = """你是 goal-studio 的意图解析器。把用户的自然语言指令解析为结构化 JSON。
+INTENT_PARSER_SYSTEM_PROMPT = """\
+你是 goal-studio 的意图解析器。把用户的自然语言指令解析为结构化 JSON。
 
 输出严格 JSON:
 {
@@ -60,7 +59,9 @@ INTENT_PARSER_SYSTEM_PROMPT = """你是 goal-studio 的意图解析器。把用�
 5. 只输出 JSON,不要其他文字"""
 
 # 多意图分段符 — 用户一句话含多个指令时的分隔词
-INTENT_SEPARATORS = ["然后", "接着", "再", "之后", "并且", "同时", "，", "；", ";", " and ", " then "]
+INTENT_SEPARATORS = [
+    "然后", "接着", "再", "之后", "并且", "同时", "，", "；", ";", " and ", " then ",
+]
 
 # 启发式规则模式库 (避免 LLM 调用)
 HEURISTIC_PATTERNS: list[dict[str, Any]] = [
@@ -87,7 +88,7 @@ HEURISTIC_PATTERNS: list[dict[str, Any]] = [
     },
     {
         "name": "set_timeout",
-        "pattern": r"(?:把|将)?\s*(l\d+-[\w-]+)\s*(?:超时|timeout|时间)(?:设|改成?|为)?\s*(\d+)\s*(?:秒|s)?",
+        "pattern": r"(?:把|将)?\s*(l\d+-[\w-]+)\s*(?:超时|timeout|时间)(?:设为|设成|设|改成?|为)?\s*(\d+)\s*(?:秒|s)?",
         "intent": "modify",
         "ref_type": "id",
         "slot_extractor": lambda m: {"timeout": int(m.group(2))},
@@ -303,7 +304,7 @@ class IncrementalLLMParser:
             # 解析第一个分段,后续分段存入上下文供连续处理
             first = self._parse_single(segments[0], canvas_summary, dialog_history, segment_index=0)
             # 预解析剩余分段(不调用 LLM,仅标记)
-            for i, seg in enumerate(segments[1:], start=1):
+            for _i, seg in enumerate(segments[1:], start=1):
                 self._context.append(ContextEntry(
                     turn=len(self._context) + 1,
                     intent=None,
@@ -420,7 +421,6 @@ class IncrementalLLMParser:
 
         匹配 HEURISTIC_PATTERNS 中的模式,返回 ParsedIntent 或 None
         """
-        text_lower = text.lower()
         for rule in HEURISTIC_PATTERNS:
             pattern = rule["pattern"]
             # 大小写不敏感匹配
@@ -508,7 +508,11 @@ class IncrementalLLMParser:
                     data = self.llm.complete_json(messages, temperature=0.2, max_tokens=4096)
                     # R2-16: 重试路径也做省略恢复(与首次调用一致)
                     target_ref = data.get("target_ref")
-                    if target_ref and target_ref.get("type") == "pronoun" and not target_ref.get("value"):
+                    if (
+                        target_ref
+                        and target_ref.get("type") == "pronoun"
+                        and not target_ref.get("value")
+                    ):
                         restored = self._restore_from_context()
                         if restored:
                             target_ref = restored

@@ -13,6 +13,10 @@ from goal_studio_server.models import (
     SessionModel,
     SessionSummary,
 )
+from goal_studio_server.models import (
+    ProductType as ModelProductType,
+)
+
 # R3-10: 导入活跃连接注册表,删除会话时主动关闭
 from goal_studio_server.routes.ws import _session_connections, cleanup_session
 from goal_studio_server.ws_protocol import msg_error
@@ -36,7 +40,7 @@ def _session_to_model(s: Session) -> SessionModel:
             prerequisites=s.goal.prerequisites,
             constraints=s.goal.constraints,
             success_criteria=s.goal.success_criteria,
-            product_type=s.goal.product_type,
+            product_type=ModelProductType(s.goal.product_type),
             metadata=s.goal.metadata,
         )
     return SessionModel(

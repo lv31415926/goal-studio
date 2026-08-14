@@ -18,7 +18,7 @@ import threading
 from collections import OrderedDict
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -31,7 +31,7 @@ except ImportError:            # Windows 无 fcntl
 
 from goal_studio.core.contract import GoalContract
 from goal_studio.core.node_graph import NodeGraph
-from goal_studio.core.ratchet_gate import GraphSnapshot, RatchetGate, RatchetDecision
+from goal_studio.core.ratchet_gate import RatchetDecision, RatchetGate
 
 # PR-G/G-1: session_id 白名单 - uuid4().hex[:12] 格式(12 位小写十六进制)
 _SESSION_ID_PATTERN = re.compile(r"^[a-f0-9]{12}$")
@@ -97,8 +97,8 @@ class Session:
     dialog: list[dict[str, str]] = field(default_factory=list)
     """对话历史(供 IntentParser 上下文)"""
 
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     # PR-O: Session IDOR 防护 — owner_id 标识会话所有者(空字符串兼容旧数据)
     owner_id: str = ""
@@ -113,15 +113,15 @@ class Session:
         """
         self.dialog.append({"role": role, "content": content})
         # C-02: 保留最近 200 条对话
-        _MAX_DIALOG = 200
-        if len(self.dialog) > _MAX_DIALOG:
-            self.dialog = self.dialog[-_MAX_DIALOG:]
-        self.updated_at = datetime.now(timezone.utc)
+        _max_dialog = 200
+        if len(self.dialog) > _max_dialog:
+            self.dialog = self.dialog[-_max_dialog:]
+        self.updated_at = datetime.now(UTC)
 
     def update_graph(self, graph: NodeGraph) -> None:
         """更新当前图"""
         self.graph = graph
-        self.updated_at = datetime.now(timezone.utc)
+        self.updated_at = datetime.now(UTC)
 
     def save_snapshot(self, patch_summary: str = "") -> None:
         """refine 前保存快照"""
@@ -173,7 +173,7 @@ class Session:
 
         # 同步 ratchet_history
         self.ratchet_history = [r.to_dict() for r in self.ratchet.history]
-        self.updated_at = datetime.now(timezone.utc)
+        self.updated_at = datetime.now(UTC)
         assert self.graph is not None
         assert isinstance(self.graph, NodeGraph)
         return self.graph
@@ -184,7 +184,7 @@ class Session:
         if snapshot:
             self.graph = snapshot.graph
             self.current_score = snapshot.score
-            self.updated_at = datetime.now(timezone.utc)
+            self.updated_at = datetime.now(UTC)
             return self.graph
         return None
 
@@ -196,7 +196,7 @@ class Session:
             self.current_score = self.ratchet.best_score
             self.best_graph = best
             self.best_score = self.ratchet.best_score
-            self.updated_at = datetime.now(timezone.utc)
+            self.updated_at = datetime.now(UTC)
             return self.graph
         return None
 
@@ -320,9 +320,15 @@ class SessionManager:
         with lock:
             yield
 
-    def create(self, name: str = "", goal: GoalContract | None = None, owner_id: str = "") -> Session:
+    def create(
+        self, name: str = "", goal: GoalContract | None = None, owner_id: str = ""
+    ) -> Session:
         """创建新会话"""
-        s = Session(name=name or f"session-{datetime.now(timezone.utc):%Y%m%d-%H%M%S}", goal=goal, owner_id=owner_id)
+        s = Session(
+            name=name or f"session-{datetime.now(UTC):%Y%m%d-%H%M%S}",
+            goal=goal,
+            owner_id=owner_id,
+        )
         with self._lock:
             self._cache[s.id] = s
             self._cache.move_to_end(s.id)
@@ -370,7 +376,7 @@ class SessionManager:
         _validate_session_id(session.id)
         lock = self._get_session_lock(session.id)
         with lock:
-            session.updated_at = datetime.now(timezone.utc)
+            session.updated_at = datetime.now(UTC)
             path = self.root / f"{session.id}.json"
             data = json.dumps(session.to_dict(), ensure_ascii=False, indent=2)
             tmp_path = self.root / f".{session.id}.tmp"

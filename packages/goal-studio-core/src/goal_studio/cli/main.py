@@ -92,7 +92,9 @@ def draft(
         console.print(f"[yellow]⚠ {issue}[/yellow]")
 
     graph = adapter.draft(goal_contract)
-    console.print(f"[green]✓ DAG 已起草: {len(graph.nodes)} 个节点, {len(graph.edges)} 条边[/green]")
+    console.print(
+        f"[green]✓ DAG 已起草: {len(graph.nodes)} 个节点, {len(graph.edges)} 条边[/green]"
+    )
 
     # 保存会话
     sm = SessionManager(session_dir)
@@ -189,7 +191,7 @@ def refine(node_id: str, patch: str, session_dir: str) -> None:
 @click.option("--session-dir", default="./sessions")
 def verify(session_dir: str) -> None:
     """三重门控验证"""
-    from goal_studio.core.ratchet_gate import RatchetGate, RatchetDecision
+    from goal_studio.core.ratchet_gate import RatchetDecision, RatchetGate
 
     sm = SessionManager(session_dir)
     sessions = sm.list_sessions()
@@ -208,7 +210,9 @@ def verify(session_dir: str) -> None:
     # MVP: 单评估器(Phase 2 接独立评审)
     report = adapter.validate(session.graph)
     console.print(f"[cyan]评估者: {report.evaluator}[/cyan]")
-    console.print(f"[{'green' if report.passed else 'red'}]分数: {report.score:.1f} ({'PASS' if report.passed else 'FAIL'})[/]")
+    color = "green" if report.passed else "red"
+    status = "PASS" if report.passed else "FAIL"
+    console.print(f"[{color}]分数: {report.score:.1f} ({status})[/]")
     for dim, score in report.dimensions.items():
         console.print(f"  {dim}: {score:.1f}")
     if report.issues:
@@ -232,7 +236,7 @@ def verify(session_dir: str) -> None:
     if decision == RatchetDecision.KEEP:
         session.best_score = report.score
         session.best_graph = session.graph
-        console.print(f"[green]✓ 棘轮判定: KEEP (分数提升)[/green]")
+        console.print("[green]✓ 棘轮判定: KEEP (分数提升)[/green]")
     else:
         console.print(f"[yellow]↺ 棘轮判定: {decision.value}[/yellow]")
     sm.save(session)
@@ -301,8 +305,9 @@ def adapters() -> None:
 @click.option("--output", "-o", default="./adapters", help="输出目录")
 def scaffold(name: str, product_type: str, desc: str, output: str) -> None:
     """生成适配器脚手架代码 (Plugin SDK)"""
-    from goal_studio.core.plugin_sdk import scaffold as _scaffold, validate_adapter
     from goal_studio.core.base_adapter import BaseAdapter
+    from goal_studio.core.plugin_sdk import scaffold as _scaffold
+    from goal_studio.core.plugin_sdk import validate_adapter
 
     file_path = _scaffold(name, product_type, output, desc)
     console.print(f"[green]✓ 适配器脚手架已生成: {file_path}[/green]")
@@ -333,8 +338,8 @@ def scaffold(name: str, product_type: str, desc: str, output: str) -> None:
 
     console.print("\n[cyan]下一步:[/cyan]")
     console.print(f"  1. 编辑 {file_path} 实现具体逻辑")
-    console.print(f"  2. 将文件放入适配器目录(如 ./adapters/)")
-    console.print(f"  3. 运行 goal-studio adapters 查看是否加载成功")
+    console.print("  2. 将文件放入适配器目录(如 ./adapters/)")
+    console.print("  3. 运行 goal-studio adapters 查看是否加载成功")
 
 
 @cli.command()
@@ -356,9 +361,8 @@ def load_plugins(dir_: str) -> None:
 @click.option("--name", default="", help="skill 名称(默认从产物提取)")
 def install(session: str, target: str, skill_dir: str, name: str) -> None:
     """安装产物到运行环境 (maxfun-adapter)"""
-    import json
-    from goal_studio.core.session_manager import SessionManager
     from goal_studio.core.artifact_store import LocalFileArtifactStore
+    from goal_studio.core.session_manager import SessionManager
 
     sm = SessionManager("./sessions")
     try:
@@ -381,11 +385,16 @@ def install(session: str, target: str, skill_dir: str, name: str) -> None:
     if target == "maxfun":
         # 动态加载 maxfun-adapter
         import sys
-        plugin_path = Path(__file__).resolve().parent.parent.parent.parent.parent.parent / "plugins" / "maxfun-adapter"
+        plugin_path = (
+            Path(__file__).resolve().parents[5] / "plugins" / "maxfun-adapter"
+        )
         if str(plugin_path) not in sys.path:
             sys.path.insert(0, str(plugin_path))
         try:
-            from maxfun_bridge import install_to_maxfun, detect_maxfun_dir  # type: ignore[import-not-found]
+            from maxfun_bridge import (  # type: ignore[import-not-found]
+                detect_maxfun_dir,
+                install_to_maxfun,
+            )
         except ImportError:
             console.print("[red]✗ maxfun-adapter 未安装[/red]")
             console.print("[cyan]请将 plugins/maxfun-adapter/ 加入 PYTHONPATH[/cyan]")
@@ -419,7 +428,9 @@ def install(session: str, target: str, skill_dir: str, name: str) -> None:
 def import_skill(from_target: str, skill_dir: str, name: str) -> None:
     """从 maxfun 导入 skill 为 goal-studio DAG (maxfun-adapter)"""
     import sys
-    plugin_path = Path(__file__).resolve().parent.parent.parent.parent.parent.parent / "plugins" / "maxfun-adapter"
+    plugin_path = (
+            Path(__file__).resolve().parents[5] / "plugins" / "maxfun-adapter"
+        )
     if str(plugin_path) not in sys.path:
         sys.path.insert(0, str(plugin_path))
     try:
@@ -450,11 +461,13 @@ def import_skill(from_target: str, skill_dir: str, name: str) -> None:
 def list_skills(dir_: str) -> None:
     """列出 maxfun 目录中的 skill (maxfun-adapter)"""
     import sys
-    plugin_path = Path(__file__).resolve().parent.parent.parent.parent.parent.parent / "plugins" / "maxfun-adapter"
+    plugin_path = (
+            Path(__file__).resolve().parents[5] / "plugins" / "maxfun-adapter"
+        )
     if str(plugin_path) not in sys.path:
         sys.path.insert(0, str(plugin_path))
     try:
-        from maxfun_bridge import list_maxfun_skills, detect_maxfun_dir
+        from maxfun_bridge import detect_maxfun_dir, list_maxfun_skills
     except ImportError:
         console.print("[red]✗ maxfun-adapter 未安装[/red]")
         return

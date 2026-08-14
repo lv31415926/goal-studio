@@ -90,7 +90,6 @@ export class WSClient {
     }
 
     this.ws.onopen = () => {
-      console.log("[WS] connected");
       this.reconnectAttempts = 0;
       this.lastPongAt = Date.now();
       // P-LOW-2-7: 连接成功通知 UI
@@ -128,7 +127,6 @@ export class WSClient {
     this.ws.onclose = (ev) => {
       // PR-ROUND-3/E-06: 检查 generation,旧连接的 onclose 不处理(避免重连/状态串台)
       if (gen !== this.generation) return;
-      console.log("[WS] closed:", ev.code, ev.reason);
       if (this.pingInterval) {
         clearInterval(this.pingInterval);
         this.pingInterval = null;
@@ -156,7 +154,6 @@ export class WSClient {
     // R4-14: 指数退避加 jitter (随机抖动 0-500ms),避免多个客户端同步重连
     const baseDelay = Math.min(1000 * 2 ** this.reconnectAttempts, 16000);
     const delay = baseDelay + Math.random() * 500;
-    console.log(`[WS] reconnect in ${delay}ms (attempt ${this.reconnectAttempts})`);
     // P0-2: 记录 timer 引用供 close() 清除
     this.reconnectTimer = setTimeout(() => this._doConnect(), delay);
   }

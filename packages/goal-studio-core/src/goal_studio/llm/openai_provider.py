@@ -8,7 +8,8 @@ from __future__ import annotations
 import logging
 import os
 import threading
-from typing import Any, AsyncIterator, cast
+from collections.abc import AsyncIterator
+from typing import Any, cast
 
 from goal_studio.llm.base import BaseLLMProvider, LLMMessage, LLMResponse
 
@@ -174,7 +175,8 @@ class OpenAILLMProvider(BaseLLMProvider):
             if not text:
                 reasoning = getattr(choice.message, "reasoning_content", None) or ""
                 if reasoning:
-                    # reasoning_content 是推理过程而非最终输出, 仅在 finish_reason != 'length' 时尝试
+                    # reasoning_content 是推理过程而非最终输出,
+                    # 仅在 finish_reason != 'length' 时尝试
                     # length 表示推理耗尽 max_tokens, content 必为空
                     if finish_reason != "length":
                         text = reasoning
@@ -218,7 +220,11 @@ class OpenAILLMProvider(BaseLLMProvider):
             # 网络错误/SDK 异常: 降级到基类文本解析
             _logger.warning(
                 'openai_json_mode_failed',
-                extra={'model': self._model, 'msg_count': len(messages), 'err_type': type(e).__name__},
+                extra={
+                    'model': self._model,
+                    'msg_count': len(messages),
+                    'err_type': type(e).__name__,
+                },
                 exc_info=True,
             )
             return super().complete_json(

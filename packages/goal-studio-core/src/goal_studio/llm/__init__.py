@@ -11,9 +11,9 @@
   GOAL_STUDIO_LLM_MODEL=gpt-4o-mini|claude-haiku|...
 """
 
-from goal_studio.llm.base import LLMProvider, LLMMessage, LLMResponse
+from goal_studio.llm.base import LLMMessage, LLMProvider, LLMResponse
 from goal_studio.llm.mock_provider import MockLLMProvider
-from goal_studio.llm.registry import get_llm, configure_llm
+from goal_studio.llm.registry import configure_llm, get_llm
 
 __all__ = [
     "LLMProvider", "LLMMessage", "LLMResponse",

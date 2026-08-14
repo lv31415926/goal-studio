@@ -4,18 +4,15 @@ from __future__ import annotations
 import pytest
 
 from goal_studio import (
-    BaseAdapter,
-    GoalContract,
-    Patch,
-    Report,
     Artifact,
-    NodeGraph,
-    Node,
+    BaseAdapter,
     Edge,
+    GoalContract,
+    Node,
+    NodeGraph,
     NodeLayer,
 )
-from goal_studio.core.contract import ProductType, PatchOp
-from goal_studio.core.node_graph import NodeStatus
+from goal_studio.core.contract import ProductType
 
 
 def test_imports() -> None:
@@ -103,7 +100,7 @@ def test_skill_adapter_validate_build() -> None:
 
 def test_ratchet_gate_keep_revert() -> None:
     """棘轮门控 KEEP/REVERT"""
-    from goal_studio.core.ratchet_gate import RatchetGate, RatchetDecision
+    from goal_studio.core.ratchet_gate import RatchetDecision, RatchetGate
 
     gate = RatchetGate()
     # KEEP: new > old
@@ -157,7 +154,7 @@ def test_artifact_store() -> None:
 
 def test_adapter_registry() -> None:
     """适配器注册中心"""
-    from goal_studio.core.adapter_registry import AdapterRegistry, get_default_registry
+    from goal_studio.core.adapter_registry import get_default_registry
 
     registry = get_default_registry()
     adapters = registry.list_adapters()

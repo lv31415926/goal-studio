@@ -6,17 +6,16 @@ Layer 1 → Layer 2 → Layer 3 → Layer 4 → Layer 5
 from __future__ import annotations
 
 import threading
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import dataclass
 
 from goal_studio.core.node_graph import NodeGraph
-from goal_studio.llm.base import BaseLLMProvider
 from goal_studio.intent_parser.action_executor import ActionExecutor, ExecutionResult
 from goal_studio.intent_parser.llm_parser import IncrementalLLMParser, ParsedIntent
-from goal_studio.intent_parser.modality_ingestion import ModalityIngestion, ModalitySignal
+from goal_studio.intent_parser.modality_ingestion import ModalityIngestion
 from goal_studio.intent_parser.node_resolver import NodeReferenceResolver, ResolveResult
-from goal_studio.intent_parser.router import ModalityRouter, ModalityRoute
+from goal_studio.intent_parser.router import ModalityRoute, ModalityRouter
 from goal_studio.intent_parser.signal_buffer import SignalBuffer
+from goal_studio.llm.base import BaseLLMProvider
 
 
 @dataclass
@@ -156,7 +155,11 @@ class IntentPipeline:
                 result.resolve = resolver.resolve(
                     ref_type=result.intent.target_ref.get("type", "pronoun"),
                     ref_value=result.intent.target_ref.get("value", ""),
-                    asr_confidence=aligned.voice.metadata.get("asr_confidence", 0.9) if aligned.voice else 1.0,
+                    asr_confidence=(
+                        aligned.voice.metadata.get("asr_confidence", 0.9)
+                        if aligned.voice
+                        else 1.0
+                    ),
                 )
             except Exception as e:  # noqa: BLE001
                 result.error = f"Layer4 消解异常: {e}"

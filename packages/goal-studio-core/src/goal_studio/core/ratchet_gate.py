@@ -17,7 +17,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any, Protocol
 
@@ -137,7 +137,9 @@ class RatchetGate:
     current_score: float = 0.0
     """当前图分数"""
 
-    def save_snapshot(self, graph: NodeGraph, score: float, patch_summary: str = "") -> GraphSnapshot:
+    def save_snapshot(
+        self, graph: NodeGraph, score: float, patch_summary: str = ""
+    ) -> GraphSnapshot:
         """refine 前保存快照
 
         Args:
@@ -156,7 +158,7 @@ class RatchetGate:
             graph=NodeGraph.from_dict(graph.to_dict()),
             score=score,
             patch_summary=patch_summary,
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            timestamp=datetime.now(UTC).isoformat(),
         )
         self.snapshots.append(snapshot)
         # 修剪快照栈

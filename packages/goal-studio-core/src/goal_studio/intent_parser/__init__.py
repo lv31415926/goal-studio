@@ -7,13 +7,13 @@ Layer 4: NodeReferenceResolver - 三信号融合算法消解节点引用
 Layer 5: ActionExecutor      - DAG mutation + undo/redo
 """
 
-from goal_studio.intent_parser.modality_ingestion import ModalityIngestion, ModalitySignal
-from goal_studio.intent_parser.signal_buffer import SignalBuffer
-from goal_studio.intent_parser.llm_parser import IncrementalLLMParser, ParsedIntent
-from goal_studio.intent_parser.node_resolver import NodeReferenceResolver, ResolveResult
 from goal_studio.intent_parser.action_executor import ActionExecutor
-from goal_studio.intent_parser.router import ModalityRouter, ModalityRoute
+from goal_studio.intent_parser.llm_parser import IncrementalLLMParser, ParsedIntent
+from goal_studio.intent_parser.modality_ingestion import ModalityIngestion, ModalitySignal
+from goal_studio.intent_parser.node_resolver import NodeReferenceResolver, ResolveResult
 from goal_studio.intent_parser.pipeline import IntentPipeline
+from goal_studio.intent_parser.router import ModalityRoute, ModalityRouter
+from goal_studio.intent_parser.signal_buffer import SignalBuffer
 
 __all__ = [
     "ModalityIngestion", "ModalitySignal",

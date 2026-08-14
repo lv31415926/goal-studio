@@ -6,8 +6,8 @@
 FROM node:20-slim AS web-builder
 WORKDIR /app
 # R5-06: 统一使用 pnpm(与 CI/本地开发一致),移除 npm
-RUN corepack enable && corepack prepare pnpm@latest --activate
-COPY packages/goal-studio-web/package.json packages/goal-studio-web/pnpm-lock.yaml packages/goal-studio-web/pnpm-workspace.yaml ./
+RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
+COPY packages/goal-studio-web/package.json packages/goal-studio-web/pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY packages/goal-studio-web/ ./
 RUN pnpm run build:app
@@ -20,7 +20,7 @@ WORKDIR /app
 # R5-10: OCI 标准镜像元数据
 LABEL org.opencontainers.image.title="goal-studio" \
       org.opencontainers.image.source="https://github.com/goal-studio/goal-studio" \
-      org.opencontainers.image.licenses="MIT"
+      org.opencontainers.image.licenses="Apache-2.0"
 
 # 安装运行时依赖: ca-certificates(HTTPS) + tzdata(时区)
 # 健康检查使用 Python 标准库 urllib,不依赖 curl,减小镜像体积
@@ -31,15 +31,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # 创建非 root 用户
 RUN groupadd -r appuser && useradd -r -g appuser -d /app -s /sbin/nologin appuser
 
-# 安装 Python 依赖(先复制 pyproject.toml 利用缓存)
-COPY packages/goal-studio-core/pyproject.toml packages/goal-studio-core/
-COPY packages/goal-studio-server/pyproject.toml packages/goal-studio-server/
+# 安装 Python 依赖(复制完整包目录: hatchling 构建需要 src/ 和 README.md)
+COPY packages/goal-studio-core/ packages/goal-studio-core/
+COPY packages/goal-studio-server/ packages/goal-studio-server/
 # R5-02: 安装 [llm] extras(openai/anthropic),生产 LLM 接入必需
 RUN pip install --no-cache-dir "./packages/goal-studio-core[llm]" ./packages/goal-studio-server
-
-# 复制源代码
-COPY packages/goal-studio-core/src/ packages/goal-studio-core/src/
-COPY packages/goal-studio-server/src/ packages/goal-studio-server/src/
 
 # 复制前端构建产物(容器内固定路径, 与 GOAL_STUDIO_WEB_DIST 对应)
 COPY --from=web-builder /app/dist-app/ /app/packages/goal-studio-web/dist-app/
@@ -57,5 +53,5 @@ ENV GOAL_STUDIO_WEB_DIST=/app/packages/goal-studio-web/dist-app
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD ["python", "-c", "import urllib.request; urllib.request.urlopen(\"http://localhost:8000/api/health\", timeout=3)"]
-# PR-ROUND-1/A-02: --limit-max-request-size 1MB,防止超大请求体导致 OOM
-CMD ["uvicorn", "goal_studio_server.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--limit-max-request-size", "1048576"]
+# 请求体大小限制由应用层中间件实现(app.py body_size_limit_middleware, 1MB)
+CMD ["uvicorn", "goal_studio_server.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]

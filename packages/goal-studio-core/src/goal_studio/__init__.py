@@ -3,8 +3,8 @@
 __version__ = "0.1.0"
 
 from goal_studio.core.base_adapter import BaseAdapter
-from goal_studio.core.contract import GoalContract, Patch, Report, Artifact
-from goal_studio.core.node_graph import NodeGraph, Node, Edge, NodeLayer
+from goal_studio.core.contract import Artifact, GoalContract, Patch, Report
+from goal_studio.core.node_graph import Edge, Node, NodeGraph, NodeLayer
 
 __all__ = [
     "BaseAdapter",

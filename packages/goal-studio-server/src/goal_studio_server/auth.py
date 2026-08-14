@@ -11,7 +11,7 @@ import logging
 import os
 import time
 
-from fastapi import Header, HTTPException, Query, status
+from fastapi import Header, HTTPException, status
 
 _logger = logging.getLogger(__name__)
 

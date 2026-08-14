@@ -218,33 +218,24 @@ goal-studio build -o ./my-artifacts --target file://./dist
 
 ## goal-studio serve
 
-启动 goal-studio Web 服务(React 前端 + FastAPI 后端)。
-
-### 用法
-
-```bash
-goal-studio serve [--port <端口>]
-```
-
-### 参数
-
-| 参数 | 类型 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `--port` | `int` | `5173` | 服务端口 |
-
-### 示例
-
-```bash
-# 默认端口 5173
-goal-studio serve
-
-# 指定端口
-goal-studio serve --port 8080
-```
-
-::: tip 与 view 的区别
-`view` 是一次性查看当前 DAG;`serve` 启动长驻 Web 服务,支持实时交互(WebSocket)、多模态输入与可视化编辑。
+::: warning 占位命令
+`serve` 当前为占位实现(Phase 2 规划),仅打印提示,不会真正启动服务。请改用下方「实际启动方式」。
 :::
+
+### 实际启动方式
+
+Web 服务由 FastAPI 后端 + React 前端组成,分别启动:
+
+```bash
+# 1. 后端 (FastAPI, 端口 8000)
+uvicorn goal_studio_server.app:create_app --factory --reload --port 8000
+
+# 2. 前端 (Vite dev server, 端口 5173, 自动代理 /api 与 /ws 到 8000)
+cd packages/goal-studio-web
+pnpm run dev
+```
+
+访问 `http://localhost:5173` 即可使用可视化创作界面。生产部署见[生产部署](/deployment)。
 
 ## goal-studio adapters
 

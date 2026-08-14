@@ -289,7 +289,7 @@ async def _handle_intent_parse(
                 s.add_dialog("assistant", assistant_msg)
                 mgr.save(s)
                 # PR-ROUND-1/B-05: 锁内捕获 version,避免锁外读取时被并发修改
-                graph_version = s.graph.version
+                graph_version = result.final_graph.version
             await _send_json(
                 ws, msg_phase_change(session_id, s.phase.value).model_dump()
             )

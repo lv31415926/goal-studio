@@ -8,12 +8,9 @@
 """
 from __future__ import annotations
 
-import shutil
-import tempfile
-from pathlib import Path
-
 import pytest
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
 from goal_studio_server.app import create_app
 
@@ -73,6 +70,6 @@ def test_ws_unknown_type(client):
 
 def test_ws_session_not_found(client):
     """连接不存在的会话应被拒(close code 4404)"""
-    with pytest.raises(Exception):
+    with pytest.raises(WebSocketDisconnect):
         with client.websocket_connect("/ws/sessions/nonexistent-session") as ws:
             ws.receive_json()

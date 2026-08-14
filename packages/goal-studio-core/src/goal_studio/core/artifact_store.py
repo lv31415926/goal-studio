@@ -10,7 +10,7 @@ import os
 import re
 import stat
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -46,7 +46,7 @@ class ArtifactVersion:
 
     version: str
     artifact_id: str
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     note: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -98,7 +98,7 @@ class LocalFileArtifactStore(ArtifactStore):
         try:
             target.relative_to(base_resolved)
         except ValueError:
-            raise ValueError(f"路径遍历: {relative} 不在 {base} 内")
+            raise ValueError(f"路径遍历: {relative} 不在 {base} 内") from None
         return target
 
     def save(self, artifact: Artifact, note: str = "") -> str:
@@ -216,7 +216,7 @@ class LocalFileArtifactStore(ArtifactStore):
         manifest["versions"].append(
             {
                 "version": version,
-                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_at": datetime.now(UTC).isoformat(),
                 "note": note,
                 "metadata": metadata,
             }

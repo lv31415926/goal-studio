@@ -8,7 +8,6 @@ from __future__ import annotations
 import threading
 from collections import deque
 from dataclasses import dataclass
-from typing import Any
 
 from goal_studio.intent_parser.modality_ingestion import Modality, ModalitySignal
 

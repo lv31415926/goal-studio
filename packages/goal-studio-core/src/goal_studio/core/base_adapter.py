@@ -132,7 +132,7 @@ class BaseAdapter(ABC):
         return content
 
     @staticmethod
-    def _safe_write(base: "Path", relative: str, content: str) -> None:
+    def _safe_write(base: Path, relative: str, content: str) -> None:
         """安全写入文件 — 校验路径遍历后写入
 
         PR-G/G-3: 统一所有 adapter 的 export/install 路径校验。
@@ -151,7 +151,7 @@ class BaseAdapter(ABC):
         try:
             target.relative_to(base_resolved)
         except ValueError:
-            raise ValueError(f"路径遍历被拦截: {relative} 不在 {base} 内")
+            raise ValueError(f"路径遍历被拦截: {relative} 不在 {base} 内") from None
         target.parent.mkdir(parents=True, exist_ok=True)
         # 修复推理模型双转义导致的字面 \n 问题
         content = BaseAdapter._normalize_content(content)

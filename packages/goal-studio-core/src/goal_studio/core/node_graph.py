@@ -148,11 +148,14 @@ class NodeGraph:
     version: int = 1
     """图版本,每次 refine 递增"""
 
-    # PR-Q: 邻接表索引 — add_edge/remove_node/from_dict 时维护,避免 _find_cycle_path/get_descendants 全量扫描
+    # PR-Q: 邻接表索引 — add_edge/remove_node/from_dict 时维护,
+    # 避免 _find_cycle_path/get_descendants 全量扫描
     _adj_out: dict[str, list[str]] = field(default_factory=dict, repr=False, compare=False)
     _adj_in: dict[str, list[str]] = field(default_factory=dict, repr=False, compare=False)
     # R2-04: 边端点三元组索引 — O(1) 去重检查
-    _edge_endpoints: set[tuple[str, str, str]] = field(default_factory=set, repr=False, compare=False)
+    _edge_endpoints: set[tuple[str, str, str]] = field(
+        default_factory=set, repr=False, compare=False
+    )
     # PR-M: 线程安全锁,保护并发图操作(RLock 可重入,remove_node 递归调用无死锁)
     # 只读方法(get_descendants/_find_cycle_path/validate/to_dict/topological_order)不加锁,
     # 依赖调用方在 per-session 锁内完成读取
@@ -320,7 +323,7 @@ class NodeGraph:
             if layer
             else list(self.nodes.keys())
         )
-        in_degree = {nid: 0 for nid in nodes}
+        in_degree = dict.fromkeys(nodes, 0)
         adj: dict[str, list[str]] = {nid: [] for nid in nodes}
         # R2-03: 复用 _adj_out 索引(按 layer 过滤),避免重新扫描 self.edges
         for src, targets in self._adj_out.items():
@@ -434,7 +437,7 @@ class NodeGraph:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> NodeGraph:
         g = cls(root_id=data.get("root_id"), version=data.get("version", 1))
-        for nid, nd in data.get("nodes", {}).items():
+        for _nid, nd in data.get("nodes", {}).items():
             n = Node(
                 id=nd["id"],
                 layer=NodeLayer(nd["layer"]),

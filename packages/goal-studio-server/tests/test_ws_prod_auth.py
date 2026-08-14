@@ -8,11 +8,9 @@
 """
 from __future__ import annotations
 
-import tempfile
-from pathlib import Path
-
 import pytest
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
 from goal_studio_server.app import create_app
 
@@ -52,14 +50,14 @@ def _auth(**kw):
 
 def test_prod_ws_no_token_rejected(prod_client):
     sid = prod_client.post("/api/sessions", json={"name": "t"}, headers=_auth()).json()["id"]
-    with pytest.raises(Exception):
+    with pytest.raises(WebSocketDisconnect):
         with prod_client.websocket_connect(f"/ws/sessions/{sid}"):
             pass
 
 
 def test_prod_ws_wrong_token_rejected(prod_client):
     sid = prod_client.post("/api/sessions", json={"name": "t"}, headers=_auth()).json()["id"]
-    with pytest.raises(Exception):
+    with pytest.raises(WebSocketDisconnect):
         with prod_client.websocket_connect(f"/ws/sessions/{sid}?token=wrong"):
             pass
 
@@ -77,7 +75,7 @@ def test_prod_ws_allowed_origin_ping_pong(prod_client):
 
 def test_prod_ws_disallowed_origin_rejected(prod_client):
     sid = prod_client.post("/api/sessions", json={"name": "t"}, headers=_auth()).json()["id"]
-    with pytest.raises(Exception):
+    with pytest.raises(WebSocketDisconnect):
         with prod_client.websocket_connect(
             f"/ws/sessions/{sid}?token=ci-test-token",
             headers={"Origin": "http://evil.example.com"},
@@ -87,7 +85,7 @@ def test_prod_ws_disallowed_origin_rejected(prod_client):
 
 def test_prod_ws_invalid_session_id_closed_cleanly(prod_client):
     """非法 session_id 抛 ValueError,应被捕获为 4404 而非 500(PR-S1 修复)"""
-    with pytest.raises(Exception):
+    with pytest.raises(WebSocketDisconnect):
         with prod_client.websocket_connect(
             "/ws/sessions/fake-session?token=ci-test-token",
             headers={"Origin": "http://localhost:8000"},
