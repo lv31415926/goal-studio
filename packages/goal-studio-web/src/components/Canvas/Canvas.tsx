@@ -19,6 +19,7 @@ import {
   BackgroundVariant,
   Controls,
   MarkerType,
+  useReactFlow,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useCanvasStore } from "../../stores/canvasStore";
@@ -44,6 +45,9 @@ export function Canvas() {
   const setZoom = useCanvasStore((s) => s.setZoom);
   const setViewport = useCanvasStore((s) => s.setViewport);
   const [currentZoom, setCurrentZoom] = useState(1);
+  // 修复: fitView prop 仅在 ReactFlow 挂载时触发一次,而挂载时 rfNodes 尚为空
+  // (useEffect 异步填充),导致加载已有会话后节点在视口外。图变化后主动 fitView。
+  const { fitView } = useReactFlow();
 
   const lod = zoomToLod(currentZoom);
   const maxLayer = lodToMaxLayer(lod);
@@ -74,7 +78,11 @@ export function Canvas() {
           },
         })),
     );
-  }, [graph, maxLayer]);
+    // 节点填充后适配视口,确保加载已有会话时图可见
+    requestAnimationFrame(() => {
+      fitView({ padding: 0.2, duration: 200 });
+    });
+  }, [graph, maxLayer, fitView]);
 
   const rfEdges: Edge[] = useMemo(() => {
     if (!graph) return [];

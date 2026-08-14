@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { api } from "../src/api/apiClient";
+import type { SessionSummary } from "../src/types";
 import { ReactFlowProvider } from "@xyflow/react";
 import { Canvas } from "../src/components/Canvas/Canvas";
 import { DialogPanel } from "../src/components/DialogPanel/DialogPanel";
@@ -17,7 +19,24 @@ export default function App() {
   // PR-ROUND-3/E-01: 顶层 useSession,与 DialogPanel 共享同一会话状态
   // 之前顶栏独立调用 api.createSession/draft/validate/build,与 DialogPanel 内 useSession 是两套独立状态
   const sessionState = useSession();
-  const { session, loading, error, createAndDraft, validate, build } = sessionState;
+  const { session, loading, error, createAndDraft, loadSession, validate, build } = sessionState;
+
+  // 会话列表 (加载已有案例)
+  const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  useEffect(() => {
+    api.listSessions().then(setSessions).catch(() => setSessions([]));
+  }, []);
+
+  const handleLoad = async (id: string) => {
+    if (!id) return;
+    setStatus("加载会话...");
+    try {
+      const s = await loadSession(id);
+      if (s) setStatus(`已加载: ${s.name ?? s.id}`);
+    } catch {
+      setStatus("加载失败");
+    }
+  };
 
   const selectedNodeId = useCanvasStore((s) => s.selectedNodeId);
 
@@ -123,6 +142,20 @@ export default function App() {
           </div>
         </div>
         <div style={{ display: "flex", gap: "var(--gs-space-2)", alignItems: "center" }}>
+          <select
+            className="gs-input"
+            style={{ width: 320 }}
+            value={session?.id ?? ""}
+            onChange={(e) => handleLoad(e.target.value)}
+            disabled={loading}
+          >
+            <option value="">— 加载已有会话 ({sessions.length}) —</option>
+            {sessions.map((it) => (
+              <option key={it.id} value={it.id}>
+                {(it.name || it.id).slice(0, 30)} · {it.phase} · {it.best_score.toFixed(1)}
+              </option>
+            ))}
+          </select>
           <input
             type="text"
             value={goalText}

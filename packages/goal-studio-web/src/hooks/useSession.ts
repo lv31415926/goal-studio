@@ -209,6 +209,59 @@ export function useSession() {
     [setGraph, setPhase, setSessionId],
   );
 
+  // 加载已有会话 (按 ID): 拉取会话详情 + 渲染图 + 连接 WS
+  const loadSession = useCallback(
+    async (id: string) => {
+      if (creatingRef.current) return;
+      creatingRef.current = true;
+      setLoading(true);
+      setError(null);
+      setWsStatus("connecting");
+      try {
+        const s = await api.getSession(id);
+        setSession(s);
+        sessionIdRef.current = s.id;
+        setSessionId(s.id);
+        if (s.graph) {
+          setGraph(s.graph);
+        }
+        setPhase((s.phase as SessionPhase) ?? "visualize");
+
+        // 连接 WebSocket (与 createAndDraft 一致)
+        if (wsRef.current) wsRef.current.close();
+        const ws = new WSClient(s.id, (type, payload, sid) =>
+          handlerRef.current(type, payload, sid),
+        );
+        ws.onStatusChange = (status) => {
+          switch (status) {
+            case "connected":
+              setWsStatus("connected");
+              break;
+            case "reconnecting":
+              setWsStatus("connecting");
+              break;
+            case "disconnected":
+            case "reconnect_failed":
+              setWsStatus("disconnected");
+              break;
+          }
+        };
+        ws.connect();
+        wsRef.current = ws;
+        setCanUndo(false);
+        return s;
+      } catch (e) {
+        setError(String(e));
+        setWsStatus("disconnected");
+        throw e;
+      } finally {
+        setLoading(false);
+        creatingRef.current = false;
+      }
+    },
+    [setGraph, setPhase, setSessionId],
+  );
+
   // 通过 WS 发送意图解析
   // force: 边界场景 — 确认后强制执行(跳过删除级联确认门控)
   const sendIntent = useCallback((text: string, isMobile = false, force = false) => {
@@ -296,6 +349,7 @@ export function useSession() {
     canUndo,
     setPendingConfirmation,
     createAndDraft,
+    loadSession,
     sendIntent,
     sendVoiceChunk,
     sendMouseSelect,
