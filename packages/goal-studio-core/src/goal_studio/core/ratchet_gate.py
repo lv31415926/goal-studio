@@ -242,6 +242,41 @@ class RatchetGate:
         """获取栈顶快照(不弹出)"""
         return self.snapshots[-1] if self.snapshots else None
 
+    def judge_reports(
+        self,
+        reports: list[Report],
+        old_score: float,
+        current_graph: NodeGraph,
+        patch_summary: str = "",
+    ) -> tuple[RatchetDecision, Report]:
+        """对已完成的评审报告做双评审棘轮判定(不重复调用评估器)
+
+        G2 双评估器接入点: 调用方(LLM 评审昂贵,不重复执行)先产出报告,
+        再统一走本方法。语义与 judge_with_peers 一致:
+          - 分差 <= conflict_threshold → 取平均进棘轮
+          - 分差 > conflict_threshold → 返回 ARBITRATE(不 _record),
+            由调用方补第三评审后调 arbitrate()
+
+        单报告时等价于普通 judge(降级路径)。
+        """
+        if not reports:
+            raise ValueError("Need at least 1 report")
+        scores = [r.score for r in reports]
+
+        if len(reports) >= 2 and (max(scores) - min(scores)) > self.conflict_threshold:
+            merged = self._merge_reports(reports)
+            # R2-10: ARBITRATE 不调用 _record,仅设置 current_score
+            # 让后续 arbitrate → judge 统一记录,避免重复 _record
+            self.current_score = sum(scores) / len(scores)
+            return RatchetDecision.ARBITRATE, merged
+
+        avg_score = sum(scores) / len(scores)
+        merged = self._merge_reports(reports)
+        merged.score = avg_score
+
+        decision = self.judge(old_score, avg_score, current_graph, patch_summary)
+        return decision, merged
+
     def judge_with_peers(
         self,
         graph: NodeGraph,
@@ -266,24 +301,8 @@ class RatchetGate:
         """
         if len(evaluators) != 2:
             raise ValueError("Need exactly 2 peer evaluators")
-
         reports = [ev(graph) for ev in evaluators]
-        scores = [r.score for r in reports]
-
-        if abs(scores[0] - scores[1]) > self.conflict_threshold:
-            merged = self._merge_reports(reports)
-            # R2-10: ARBITRATE 不调用 _record,仅设置 current_score
-            # 让后续 arbitrate → judge 统一记录,避免重复 _record
-            new_score = sum(scores) / 2
-            self.current_score = new_score
-            return RatchetDecision.ARBITRATE, merged
-
-        avg_score = sum(scores) / len(scores)
-        merged = self._merge_reports(reports)
-        merged.score = avg_score
-
-        decision = self.judge(old_score, avg_score, graph, patch_summary)
-        return decision, merged
+        return self.judge_reports(reports, old_score, graph, patch_summary)
 
     def arbitrate(
         self,

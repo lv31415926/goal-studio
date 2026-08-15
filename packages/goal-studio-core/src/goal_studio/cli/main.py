@@ -538,6 +538,60 @@ def list_skills(dir_: str) -> None:
 
 
 @cli.command()
+@click.option("--knowledge-root", default="", help="knowledge.json 路径(默认自动探测)")
+def skills(knowledge_root: str) -> None:
+    """列出 Voyager 技能库(验证通过沉淀的可复用结构)"""
+    import json as _json
+    import os as _os
+
+    from goal_studio.core.knowledge_store import LocalFileKnowledgeStore
+
+    path = knowledge_root or _os.getenv(
+        "GOAL_STUDIO_KNOWLEDGE_ROOT", ""
+    ) or str(Path.home() / ".goal-studio" / "knowledge.json")
+    if not Path(path).exists():
+        console.print(f"[yellow]⚠ 技能库不存在: {path}[/yellow]")
+        console.print("[cyan]验证 PASS 的会话会自动沉淀技能(先 draft → verify)[/cyan]")
+        return
+
+    store = LocalFileKnowledgeStore(path)
+    entries = sorted(
+        store.query(category="pattern"),
+        key=lambda e: e.updated_at,
+        reverse=True,
+    )
+    if not entries:
+        console.print(f"[yellow]⚠ 技能库为空: {path}[/yellow]")
+        return
+
+    table = Table(title=f"Voyager 技能库 ({path}, {len(entries)} 项)")
+    table.add_column("目标", style="cyan")
+    table.add_column("分数", justify="right")
+    table.add_column("L1", justify="right")
+    table.add_column("产物骨架", style="dim")
+    table.add_column("更新时间", style="dim")
+    for e in entries:
+        try:
+            pat = _json.loads(e.value)
+        except Exception:  # noqa: BLE001
+            continue
+        goal_text = str(pat.get("goal", ""))[:32]
+        score = pat.get("score", e.metadata.get("score", 0))
+        l1 = len(pat.get("l1_nodes", []))
+        outline = pat.get("artifact_outline")
+        skeleton = f"{len(outline)} 文件" if isinstance(outline, dict) and outline else "-"
+        updated = e.updated_at
+        updated_str = (
+            updated.isoformat()[:16] if hasattr(updated, "isoformat") else str(updated)[:16]
+        )
+        table.add_row(goal_text, f"{score}", f"{l1}", skeleton, updated_str)
+    console.print(table)
+    console.print(
+        "[dim]复用: 新会话 draft 时按目标相似度自动检索注入 few-shot[/dim]"
+    )
+
+
+@cli.command()
 @click.option("--session-dir", default="./sessions")
 def sessions(session_dir: str) -> None:
     """列出所有会话"""

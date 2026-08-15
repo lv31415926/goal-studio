@@ -19,7 +19,10 @@ export default function App() {
   // PR-ROUND-3/E-01: 顶层 useSession,与 DialogPanel 共享同一会话状态
   // 之前顶栏独立调用 api.createSession/draft/validate/build,与 DialogPanel 内 useSession 是两套独立状态
   const sessionState = useSession();
-  const { session, loading, error, createAndDraft, loadSession, validate, build } = sessionState;
+  const {
+    session, loading, error, createAndDraft, loadSession, validate, build,
+    canUndo, undo, exportArtifact, installArtifact,
+  } = sessionState;
 
   // 会话列表 (加载已有案例)
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
@@ -88,12 +91,38 @@ export default function App() {
     }
   };
 
+  // G3: 撤销最近一次 refine
+  const handleUndo = async () => {
+    if (!session) return;
+    setStatus("撤销中...");
+    const ok = await undo();
+    setStatus(ok ? "已撤销最近一次修改" : "无可撤销快照 (重载后快照不持久化)");
+  };
+
+  // G4: 导出产物
+  const handleExport = async () => {
+    if (!session) return;
+    setStatus("导出中...");
+    const location = await exportArtifact();
+    setStatus(location ? `已导出: ${location}` : "导出失败 (先构建产物)");
+  };
+
+  // G4: 安装产物
+  const handleInstall = async () => {
+    if (!session) return;
+    setStatus("安装中...");
+    const result = await installArtifact({ target: "file", skill_dir: "./output" });
+    setStatus(result ? `已安装: ${result}` : "安装失败 (先构建产物)");
+  };
+
   const phaseLabel: Record<string, { text: string; color: string }> = {
     init: { text: "初始化", color: "var(--gs-text-3)" },
     visualize: { text: "可视化", color: "var(--gs-info)" },
     refine: { text: "精化", color: "var(--gs-warn)" },
     verify: { text: "验证", color: "var(--gs-brand)" },
     build: { text: "构建", color: "var(--gs-success)" },
+    done: { text: "已完成", color: "var(--gs-success)" },
+    draft: { text: "起草", color: "var(--gs-info)" },
   };
   // 兜底: SessionPhase 有 8 个值,未在表中覆盖的 (draft/done/paused 等) 用灰色徽章
   // E-01: 优先使用共享 session 的 phase,回退到本地 phase
@@ -185,6 +214,30 @@ export default function App() {
             className="gs-btn gs-btn-success"
           >
             构建
+          </button>
+          <button
+            onClick={handleUndo}
+            disabled={!session || !canUndo}
+            className="gs-btn"
+            title={canUndo ? "撤销最近一次精化" : "无可撤销快照"}
+          >
+            撤销
+          </button>
+          <button
+            onClick={handleExport}
+            disabled={!session || !session.best_artifact_id}
+            className="gs-btn"
+            title="导出产物到文件系统"
+          >
+            导出
+          </button>
+          <button
+            onClick={handleInstall}
+            disabled={!session || !session.best_artifact_id}
+            className="gs-btn"
+            title="安装产物到运行环境"
+          >
+            安装
           </button>
         </div>
         <div style={{ fontSize: "var(--gs-text-xs)", color: "var(--gs-text-3)", marginTop: "var(--gs-space-1)" }}>

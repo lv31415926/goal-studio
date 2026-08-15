@@ -297,12 +297,65 @@ export function useSession() {
     return report;
   }, [session]);
 
-  // REST: build
+  // REST: build(构建后刷新会话,取回 best_artifact_id 供导出/安装按钮判断)
   const build = useCallback(async (): Promise<Artifact | null> => {
     if (!session) return null;
     const artifact = await api.build(session.id);
+    const updated = await api.getSession(session.id).catch(() => null);
+    if (updated) setSession(updated);
     return artifact;
   }, [session]);
+
+  // G3: 撤销最近一次 refine(REST /ratchet/undo)
+  const undo = useCallback(async (): Promise<boolean> => {
+    if (!session) return false;
+    try {
+      setError(null);
+      const result = await api.undo(session.id);
+      if (result.graph) setGraph(result.graph);
+      setCanUndo(result.snapshots_remaining > 0);
+      if (result.phase) setPhase(result.phase as SessionPhase);
+      return true;
+    } catch (e) {
+      setError(String(e));
+      return false;
+    }
+  }, [session, setGraph, setPhase]);
+
+  // G4: 导出产物(成功后会话进入 done)
+  const exportArtifact = useCallback(async (target = ""): Promise<string | null> => {
+    if (!session) return null;
+    try {
+      setError(null);
+      const result = await api.exportArtifact(session.id, target);
+      setPhase("done");
+      const updated = await api.getSession(session.id).catch(() => null);
+      if (updated) setSession(updated);
+      return result.location;
+    } catch (e) {
+      setError(String(e));
+      return null;
+    }
+  }, [session, setPhase]);
+
+  // G4: 安装产物(file / maxfun,成功后会话进入 done)
+  const installArtifact = useCallback(
+    async (opts: { target?: string; skill_dir?: string; name?: string } = {}) => {
+      if (!session) return null;
+      try {
+        setError(null);
+        const result = await api.installArtifact(session.id, opts);
+        setPhase("done");
+        const updated = await api.getSession(session.id).catch(() => null);
+        if (updated) setSession(updated);
+        return result.result;
+      } catch (e) {
+        setError(String(e));
+        return null;
+      }
+    },
+    [session, setPhase],
+  );
 
   // R4-11: ASR 开始时锁定画布状态 — 快照当前 graph 并设置 canvasLocked=true
   const beginVoiceInput = useCallback(() => {
@@ -343,6 +396,10 @@ export function useSession() {
     refine,
     validate,
     build,
+    // G3/G4: 撤销 / 导出 / 安装
+    undo,
+    exportArtifact,
+    installArtifact,
     // R4-11: ASR 画布锁定控制
     beginVoiceInput,
     endVoiceInput,

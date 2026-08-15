@@ -157,6 +157,68 @@ class BaseAdapter(ABC):
         content = BaseAdapter._normalize_content(content)
         target.write_text(content, encoding="utf-8")
 
+    @staticmethod
+    def _prior_patterns_section(goal: GoalContract) -> str:
+        """Voyager 技能库: 把 server 注入的成功案例(goal.metadata["prior_patterns"])
+        渲染为 few-shot 结构示例 — 验证通过的 L1 骨架可作为新目标的构建块。
+
+        条目格式: {"goal": str, "product_type": str,
+                   "l1_nodes": [{"title","description"}...], "score": float}
+        """
+
+        patterns = goal.metadata.get("prior_patterns") or []
+        if not isinstance(patterns, list):
+            return ""
+        lines: list[str] = []
+        for pat in patterns[:2]:  # few-shot 上限 2 例,控制 token
+            if not isinstance(pat, dict):
+                continue
+            nodes = pat.get("l1_nodes")
+            if not isinstance(nodes, list) or not nodes:
+                continue
+            goal_text = str(pat.get("goal", ""))[:80]
+            lines.append(f"参考结构(历史成功案例,目标「{goal_text}」):")
+            for n in nodes[:8]:
+                if not isinstance(n, dict):
+                    continue
+                title = str(n.get("title", ""))[:30]
+                desc = str(n.get("description", ""))[:60]
+                if title:
+                    lines.append(f"  - {title}: {desc}")
+            # Voyager 深化: 产物级骨架(build 沉淀),展示成功产物的结构形态
+            outline = pat.get("artifact_outline")
+            if isinstance(outline, dict) and outline:
+                first_file = next(iter(outline.items()))
+                fname, olines = first_file[0], first_file[1]
+                if isinstance(olines, list) and olines:
+                    preview = " / ".join(str(x)[:40] for x in olines[:4])
+                    lines.append(f"  产物骨架({fname}): {preview}")
+        if not lines:
+            return ""
+        # Voyager 组合性: 显式提示可复用节点子集,鼓励结构组合而非从零起草
+        return "\n" + "\n".join(
+            ["", "可复用的成功结构(起草时按目标裁剪,不必照抄;",
+             "可整体复用某参考结构的节点子集并按新目标改造):"] + lines
+        )
+
+    @staticmethod
+    def _prior_lessons_section(goal: GoalContract) -> str:
+        """G1: 把 server 注入的历史经验(goal.metadata["prior_lessons"])渲染进 draft prompt
+
+        Reflexion 机制落地: REVERT/EARLY_STOP 的失败反思沉淀进 KnowledgeStore,
+        draft 时检索 Top-N 注入,避免同类目标重复踩坑。
+        """
+        lessons = goal.metadata.get("prior_lessons") or []
+        if not isinstance(lessons, list):
+            return ""
+        lessons = [str(t) for t in lessons if str(t).strip()][:3]
+        if not lessons:
+            return ""
+        lines = ["", "历史经验(来自先前会话的失败反思,起草时务必吸取):"]
+        for i, t in enumerate(lessons, 1):
+            lines.append(f"{i}. {t}")
+        return "\n".join(lines)
+
     def get_schema(self) -> dict[str, Any]:
         """返回适配器的节点槽位 schema,供前端渲染编辑表单
 

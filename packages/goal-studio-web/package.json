@@ -1,6 +1,6 @@
 {
   "name": "@goal-studio/web",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "goal-studio 可视化创作循环 React 前端",
   "type": "module",
   "license": "Apache-2.0",

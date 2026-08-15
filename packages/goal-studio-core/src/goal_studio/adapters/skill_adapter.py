@@ -135,6 +135,8 @@ class SkillAdapter(BaseAdapter):
             初始 NodeGraph,L1 有 3-7 个任务节点
         """
         user_prompt = self._build_draft_prompt(goal)
+        user_prompt += self._prior_lessons_section(goal)  # G1: 历史经验注入
+        user_prompt += self._prior_patterns_section(goal)  # Voyager: 成功结构复用
         messages = [
             LLMMessage(role="system", content=DRAFT_SYSTEM_PROMPT),
             LLMMessage(role="user", content=user_prompt),

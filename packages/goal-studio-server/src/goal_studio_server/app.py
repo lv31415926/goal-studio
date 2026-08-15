@@ -83,7 +83,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="goal-studio",
         description="可视化 Loop 创作系统 — REST + WebSocket",
-        version="0.3.0",
+        version="0.4.0",
         lifespan=lifespan,
     )
 
@@ -141,6 +141,9 @@ def create_app() -> FastAPI:
     # 常量在模块级定义(_RATE_LIMIT_* / _LLM_ENDPOINTS)
     @app.middleware("http")
     async def rate_limit_middleware(request: Request, call_next):
+        # 限流开关: 生产默认开启;GOAL_STUDIO_RATE_LIMIT=0 可关闭(测试/本地调试)
+        if os.getenv("GOAL_STUDIO_RATE_LIMIT", "1") == "0":
+            return await call_next(request)
         path = request.url.path
         method = request.method
         # 仅限制写操作
@@ -213,7 +216,7 @@ def create_app() -> FastAPI:
         from goal_studio_server.auth import is_production
         return {
             "status": "ok",
-            "version": "0.3.0",
+            "version": "0.4.0",
             "mode": "production" if is_production() else "dev",
             "uptime_seconds": round(time.time() - _START_TIME, 1),
         }

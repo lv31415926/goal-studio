@@ -36,16 +36,24 @@ DRAFT_SYSTEM_PROMPT = """你是 goal-studio 的工作流设计助手。你的任
       "parent_id": null, "slots": {}
     }
   ],
-  "edges": [{"source": "l1-xxx", "target": "l1-yyy"}],
+  "edges": [
+    {"source": "l1-xxx", "target": "l1-yyy"},
+    {"source": "l1-yyy", "target": "l1-zzz", "edge_type": "condition", "condition": "校验通过 == true"}
+  ],
   "root_id": "l1-xxx"
 }
+
+edges 说明: edge_type 可选 data(默认,顺序流转)/control(控制依赖)/condition(条件分支)。
+condition 边必须带 condition 字段(可读的布尔条件,如「分数 >= 60」「审批通过」),
+从同一节点引出的多条 condition 边构成分支,编译为工作流的 when/default 路由。
 
 三层结构要求:
 1. L1 任务规划层: 3-7 个节点,覆盖 触发条件分析→步骤编排→条件分支→异常处理→部署执行,parent_id=null
 2. L2 Agent 分配层: 每个 L1 节点下 1-2 个 L2 子节点,node_type=agent,描述执行该任务的角色(如流程设计师/集成工程师)
 3. L3 节点精化层: 关键 L2 节点下 1-2 个 L3 子节点,node_type=tool/decision,slots 必填具体参数(如触发器类型/步骤定义/重试策略/超时配置)
 4. 节点标题简洁(2-5词),描述具体可执行
-5. edges 只连同层节点的执行顺序,无环;父子关系通过 parent_id 表达
+5. edges 只连同层节点的执行顺序,无环;分支场景用 edge_type=condition;
+   父子关系通过 parent_id 表达
 6. 根据 goal 的四要素和约束定制每个节点
 7. 只输出 JSON,不要其他文字"""
 
@@ -68,7 +76,11 @@ BUILD_SYSTEM_PROMPT = """你是 goal-studio 的工作流生成助手。根据 DA
       "inputs": {},
       "outputs": {},
       "next": "step-2",
+      "next_branches": [{"when": "<条件>", "next": "step-3"}, {"default": "step-4"}],
       "on_failure": "retry|skip|abort"
+
+    next 为字符串(单后继);有多条出边或条件分支时改用 next_branches 数组
+    (按条件路由,最后一条 default 为兜底),此时 next 省略
     }
   ],
   "error_handling": {
@@ -104,6 +116,8 @@ class WorkflowAdapter(BaseAdapter):
     def draft(self, goal: GoalContract) -> NodeGraph:
         """目标 → 三层 DAG (工作流)"""
         user_prompt = self._build_draft_prompt(goal)
+        user_prompt += self._prior_lessons_section(goal)  # G1: 历史经验注入
+        user_prompt += self._prior_patterns_section(goal)  # Voyager: 成功结构复用
         messages = [
             LLMMessage(role="system", content=DRAFT_SYSTEM_PROMPT),
             LLMMessage(role="user", content=user_prompt),
@@ -155,8 +169,17 @@ class WorkflowAdapter(BaseAdapter):
             src = ed.get("source", "")
             tgt = ed.get("target", "")
             if src in g.nodes and tgt in g.nodes:
+                edge_type = str(ed.get("edge_type", "data"))
+                condition = str(ed.get("condition", "")).strip()
+                # 条件边语义校验: 缺 condition 描述降级为 data 边(不丢弃,保持图连通)
+                if edge_type == "condition" and not condition:
+                    edge_type = "data"
                 try:
-                    g.add_edge(Edge(id=f"e-{src}-{tgt}", source=src, target=tgt))
+                    g.add_edge(Edge(
+                        id=f"e-{src}-{tgt}-{edge_type}",
+                        source=src, target=tgt, edge_type=edge_type,
+                        metadata={"condition": condition} if condition else {},
+                    ))
                 except ValueError:
                     pass
 
@@ -280,9 +303,15 @@ class WorkflowAdapter(BaseAdapter):
             new_graph.remove_node(patch.target_node_id)
         elif patch.op == PatchOp.ADD_EDGE and patch.target_node_id and patch.target_node_id_2:
             if patch.target_node_id in new_graph.nodes and patch.target_node_id_2 in new_graph.nodes:
+                edge_type = str(patch.slots.get("edge_type", "data"))
+                condition = str(patch.slots.get("condition", "")).strip()
+                if edge_type == "condition" and not condition:
+                    edge_type = "data"  # 与 parse 一致: 缺条件降级 data
                 new_graph.add_edge(
-                    Edge(id=f"e-{patch.target_node_id}-{patch.target_node_id_2}",
-                         source=patch.target_node_id, target=patch.target_node_id_2)
+                    Edge(id=f"e-{patch.target_node_id}-{patch.target_node_id_2}-{edge_type}",
+                         source=patch.target_node_id, target=patch.target_node_id_2,
+                         edge_type=edge_type,
+                         metadata={"condition": condition} if condition else {})
                 )
         return new_graph
 
@@ -333,7 +362,10 @@ class WorkflowAdapter(BaseAdapter):
             suggestions.append("建议增加监控和告警配置")
 
         # 维度 5: 幂等性 (描述覆盖率 + 条件分支)
+        # P2: edge_type=condition 的边是显式分支语义,比标题关键词更可信
         has_branch = any(
+            e.edge_type == "condition" for e in graph.edges
+        ) or any(
             "分支" in n.title or "branch" in n.title.lower() or "condition" in n.slots
             for n in graph.nodes.values()
         )
@@ -389,13 +421,28 @@ class WorkflowAdapter(BaseAdapter):
             parts.append(f"  - [{node.id}] {node.title} (L{node.layer.value}): {node.description} | slots={slots_str}")
         parts.append("\n边:")
         for e in graph.edges:
-            parts.append(f"  - {e.source} → {e.target}")
+            cond = e.metadata.get("condition", "")
+            suffix = f" [condition: {cond}]" if e.edge_type == "condition" and cond else ""
+            parts.append(f"  - {e.source} → {e.target} (type={e.edge_type}){suffix}")
+        parts.append(
+            "\n分支规则: 一个节点有多条出边(或 condition 边)时,"
+            "该步骤的 next 用分支数组表达:"
+            ' [{"when": "<条件>", "next": "step-N"}, ..., {"default": "step-M"}];'
+            " 单出边 data 边保持 next 为字符串。"
+        )
         parts.append("\n请生成完整的工作流定义 JSON。")
         return "\n".join(parts)
 
     def _fallback_build(self, graph: NodeGraph) -> dict[str, str]:
-        """LLM 失败时的模板生成"""
+        """LLM 失败时的模板生成(含条件边 → 分支编译)"""
         l1 = graph.get_layer(NodeLayer.L1_PLANNING)
+        id_to_step = {n.id: f"step-{i + 1}" for i, n in enumerate(l1)}
+        # L1 出边表(条件边优先于 data 边参与分支)
+        out_edges: dict[str, list[Edge]] = {}
+        for e in graph.edges:
+            if e.source in id_to_step and e.target in id_to_step:
+                out_edges.setdefault(e.source, []).append(e)
+
         steps = []
         for i, node in enumerate(l1):
             step: dict[str, Any] = {
@@ -404,9 +451,31 @@ class WorkflowAdapter(BaseAdapter):
                 "action": node.description,
                 "inputs": {},
                 "outputs": {},
-                "next": f"step-{i+2}" if i < len(l1) - 1 else None,
                 "on_failure": "retry",
             }
+            outs = out_edges.get(node.id, [])
+            if not outs:
+                # 无显式出边: 线性兜底到下一个 step
+                step["next"] = f"step-{i+2}" if i < len(l1) - 1 else None
+            elif len(outs) == 1 and outs[0].edge_type != "condition":
+                step["next"] = id_to_step[outs[0].target]
+            else:
+                # 多出边或含条件边 → 编译为分支数组
+                branches: list[dict[str, Any]] = []
+                has_default = False
+                for e in outs:
+                    cond = str(e.metadata.get("condition", "")).strip()
+                    if e.edge_type == "condition" and cond:
+                        branches.append({"when": cond, "next": id_to_step[e.target]})
+                    elif not has_default:
+                        # data 边作默认兜底(仅第一条)
+                        branches.append({"default": id_to_step[e.target]})
+                        has_default = True
+                if branches and not has_default:
+                    branches[-1] = {"default": branches[-1]["next"]}
+                step["next_branches"] = branches if branches else None
+                if not branches:
+                    step["next"] = f"step-{i+2}" if i < len(l1) - 1 else None
             steps.append(step)
 
         # 收集 L3 配置
@@ -474,6 +543,3 @@ class WorkflowAdapter(BaseAdapter):
                 "decision": ["condition", "branches", "default"],
             },
         }
-
-
-_ = Any

@@ -89,6 +89,8 @@ class CodeAdapter(BaseAdapter):
     def draft(self, goal: GoalContract) -> NodeGraph:
         """目标 → 三层 DAG (代码项目)"""
         user_prompt = self._build_draft_prompt(goal)
+        user_prompt += self._prior_lessons_section(goal)  # G1: 历史经验注入
+        user_prompt += self._prior_patterns_section(goal)  # Voyager: 成功结构复用
         messages = [
             LLMMessage(role="system", content=DRAFT_SYSTEM_PROMPT),
             LLMMessage(role="user", content=user_prompt),

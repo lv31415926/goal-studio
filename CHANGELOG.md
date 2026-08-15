@@ -4,6 +4,85 @@
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-15
+
+### 前沿机制升级 P1 批次(双评估器 + LLM 反思)
+
+#### Added (新增)
+- G2 双评估器接入 `/refine`(验证器不对称原则落地): 评估器A=规则(adapter.validate),
+  评估器B=`LLMJudgeEvaluator`(LLM-as-a-judge,rubric 四维打分,可用更廉价模型) —
+  分差 ≤15 取均分进棘轮;分差 >15 触发第三评审(tiebreaker persona)仲裁取中位数。
+  `judge_with_peers`/`arbitrate` 从零调用状态激活
+- `RatchetGate.judge_reports`: 对已完成评审报告的统一双评审判定(不重复调用昂贵评估器),
+  `judge_with_peers` 委托实现,单报告时降级为普通 judge
+- `LLMJudgeEvaluator`(`core/llm_judge.py`): reviewer/tiebreaker 双 persona,
+  防御性解析(分数钳位/字段校验),失败返回 None 由调用方降级单评估器 — 评审失败不阻断精化
+- LLM 反思升级(Reflexion 完整版): REVERT/EARLY_STOP 时由 LLM 生成结构化教训
+  (目标/操作/判定/评估问题输入),失败降级 P0 的确定性模板
+- MockLLMProvider 新增 独立评审官/仲裁评审官/复盘 三条路由,dev 模式全链路可离线验证
+- `GOAL_STUDIO_DUAL_EVAL=0` 可关闭双评估器(回退单评估器)
+- Voyager 技能库(能力复利): `/validate` PASS 的会话自动沉淀
+  `(goal, L1 骨架, 分数)` 为 procedural 记忆(category=pattern,
+  key=pattern:{session_id} 重复验证覆盖不堆积,置信度随分数提升);
+  `/draft` 按目标相似度检索 Top-2 成功结构,经
+  `BaseAdapter._prior_patterns_section` 渲染为 few-shot 注入四个适配器 —
+  验证通过的结构成为新目标的构建块,坏条目跳过不阻断
+- Voyager 深化: build 成功后产物骨架(md 标题/py 签名,每文件≤20 行、
+  总≤60 行)合并进 pattern 的 `artifact_outline` 并重算向量、置信度+0.02;
+  few-shot 渲染骨架预览段,并显式提示"可整体复用某参考结构的节点子集"
+  (组合性);CLI 新增 `goal-studio skills` 列出技能库(目标/分数/L1/骨架/时间)
+- REST 限流开关 `GOAL_STUDIO_RATE_LIMIT=0`(生产默认开启);server 测试
+  conftest 全局禁用(全量回归 >60 POST/min 会触发 429 误报)
+
+### 前沿机制升级 P2 批次(条件边语义 + embedding 检索)
+
+#### Added (新增)
+- 条件边语义贯通(此前 `edge_type` 为死字段): draft prompt 支持
+  `edge_type=condition + condition 表达式`(同节点多条出边构成分支);
+  parse/refine-ADD_EDGE 校验缺条件文本降级 data 边(不丢图连通);
+  build prompt 与 fallback 编译为 `next_branches: [{when,next},{default}]`
+  分支数组(data 单出边保持 next 字符串);validate 分支维度认可显式条件边;
+  mock workflow DAG 提供条件边离线示例
+- `core/embedding.py`: EmbeddingProvider 协议 + HashEmbeddingProvider
+  (确定性词袋哈希,零依赖离线) + OpenAIEmbeddingProvider(可选依赖)
+  + cosine_similarity + 工厂 `get_embedding_provider()`
+- 检索排序升级 `_rank_entries`: embedding 余弦优先(复用沉淀时缓存的向量,
+  缺失现算不回写),不可用/异常整体降级关键词路径 — 默认
+  `GOAL_STUDIO_EMBEDDING_PROVIDER=none` 保持零行为变化,lessons/patterns 共用
+- pattern/reflection 沉淀时经 provider 缓存向量到 entry.metadata
+
+#### Changed (变更)
+- `_retrieve_lessons`/`_retrieve_patterns` 均委托 `_rank_entries` 统一排序
+
+#### Changed (变更)
+- `/refine` 端点改为 DI 注入 LLM provider(`Depends(get_llm_provider)`),
+  测试可 override 为 None/Fake
+- 双评审 issues 合并进入反思输入与响应(merged report)
+
+### 前沿机制升级 P0 批次(功能完整可用性 + Reflexion 经验闭环)
+
+#### Added (新增)
+- G1 知识沉淀闭环落地(Reflexion 机制): `KnowledgeStore` 从零调用方变为核心回路 —
+  refine 触发 REVERT/EARLY_STOP 时自动生成结构化失败反思写入 experience 区;
+  draft 前按目标关键词重合度检索 Top-3 历史教训注入 prompt(`prior_lessons`),
+  四个内置适配器均已接线(`BaseAdapter._prior_lessons_section`)
+- `LocalFileKnowledgeStore`: JSON 文件持久化实现(原子写 + 线程锁 + 损坏降级),
+  路径 `GOAL_STUDIO_KNOWLEDGE_ROOT` 环境变量可配
+- `POST /api/sessions/{id}/export`: Web 端产物导出(默认产物库同级
+  `goal-studio-exports/{id}/`,支持自定义 file URI)
+- `POST /api/sessions/{id}/install`: Web 端产物安装(target=file/maxfun,
+  maxfun 经 plugins 目录动态加载,缺失时返回 400 指引)
+- 前端工具栏新增 撤销/导出/安装 按钮;`useSession` 暴露 `undo/exportArtifact/installArtifact`
+
+#### Changed (变更)
+- `POST /ratchet/undo` 响应扩展为 `{graph, snapshots_remaining, phase}`,
+  前端据 `snapshots_remaining` 维持撤销按钮可用态
+- export/install 成功后会话进入 `DONE` 阶段(终态可达);前端徽章补 done/draft
+- build 后自动刷新会话(取回 `best_artifact_id` 驱动导出/安装按钮)
+
+#### Fixed (修复)
+- 前端 Web 无法撤销(REST 已有但未接线)与 build 后无法获取产物两大闭环断点
+
 ## [0.3.0] - 2026-08-15
 
 ### 缺陷核查修复 (2026-08-15 全量代码审查)

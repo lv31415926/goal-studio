@@ -13,6 +13,7 @@ from goal_studio.llm.registry import get_llm
 
 if TYPE_CHECKING:
     from goal_studio.core.artifact_store import LocalFileArtifactStore
+    from goal_studio.core.knowledge_store import LocalFileKnowledgeStore
 
 
 @lru_cache(maxsize=1)
@@ -44,6 +45,21 @@ def get_artifact_store() -> LocalFileArtifactStore:
     root = Path(root_env) if root_env else Path.cwd() / "artifacts"
     root.mkdir(parents=True, exist_ok=True)
     return LocalFileArtifactStore(root=root)
+
+
+@lru_cache(maxsize=1)
+def get_knowledge_store() -> LocalFileKnowledgeStore:
+    """获取全局 KnowledgeStore (G1: 反思经验沉淀/检索)
+
+    存储路径优先级:
+      1. 环境变量 GOAL_STUDIO_KNOWLEDGE_ROOT (部署/测试隔离)
+      2. 默认 ~/.goal-studio/knowledge.json
+    """
+    from goal_studio.core.knowledge_store import LocalFileKnowledgeStore
+
+    root_env = os.getenv("GOAL_STUDIO_KNOWLEDGE_ROOT")
+    path = Path(root_env) if root_env else Path.home() / ".goal-studio" / "knowledge.json"
+    return LocalFileKnowledgeStore(path)
 
 
 @lru_cache(maxsize=1)

@@ -31,6 +31,14 @@ vi.mock("../src/api/apiClient", () => ({
     createSession: vi.fn(async () => ({ id: "abc123def456", name: "t" })),
     draft: vi.fn(async () => ({ nodes: {}, edges: [], root_id: null, version: 1 })),
     getSession: vi.fn(async (id: string) => ({ id, phase: "visualize" })),
+    // G3/G4: 撤销 / 导出 / 安装
+    undo: vi.fn(async () => ({
+      graph: { nodes: {}, edges: [], root_id: null, version: 2 },
+      snapshots_remaining: 0,
+      phase: "refine",
+    })),
+    exportArtifact: vi.fn(async () => ({ location: "/tmp/exports/x", phase: "done" })),
+    installArtifact: vi.fn(async () => ({ result: "installed", phase: "done" })),
   },
 }));
 
@@ -62,5 +70,22 @@ describe("useSession connectWs", () => {
     expect(wsInstances).toHaveLength(2);
     expect(wsInstances[0].close).toHaveBeenCalledTimes(1);
     expect(wsInstances[1].connect).toHaveBeenCalledTimes(1);
+  });
+
+  it("undo (G3): 调用 REST 并按剩余快照数更新 canUndo", async () => {
+    const { result } = renderHook(() => useSession());
+    await act(async () => {
+      await result.current.createAndDraft({ goal: "测试" } as never);
+    });
+    // canUndo 初始 false(loadSession 重置)
+    expect(result.current.canUndo).toBe(false);
+    let ok = false;
+    await act(async () => {
+      ok = await result.current.undo();
+    });
+    expect(ok).toBe(true);
+    expect(result.current.canUndo).toBe(false); // snapshots_remaining=0
+    const { api } = await import("../src/api/apiClient");
+    expect(api.undo).toHaveBeenCalledWith("abc123def456");
   });
 });

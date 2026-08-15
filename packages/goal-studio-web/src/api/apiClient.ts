@@ -36,6 +36,7 @@ export interface Session {
   graph: NodeGraph | null;
   phase: string;
   best_score: number;
+  best_artifact_id?: string | null;
   ratchet_history: Array<Record<string, unknown>>;
   dialog: Array<{ role: string; content: string }>;
   created_at: string;
@@ -126,4 +127,32 @@ export const api = {
 
   build: (sessionId: string) =>
     request<Artifact>(`/sessions/${sessionId}/build`, { method: "POST" }),
+
+  // G3: 撤销(返回图 + 剩余快照数,驱动撤销按钮可用态)
+  undo: (sessionId: string) =>
+    request<{ graph: NodeGraph; snapshots_remaining: number; phase: string }>(
+      `/sessions/${sessionId}/ratchet/undo`,
+      { method: "POST" },
+    ),
+
+  // G4: 导出产物到文件系统(默认产物库同级 goal-studio-exports/{id})
+  exportArtifact: (sessionId: string, target = "") =>
+    request<{ location: string; phase: string }>(`/sessions/${sessionId}/export`, {
+      method: "POST",
+      body: JSON.stringify({ target }),
+    }),
+
+  // G4: 安装产物(file / maxfun)
+  installArtifact: (
+    sessionId: string,
+    opts: { target?: string; skill_dir?: string; name?: string } = {},
+  ) =>
+    request<{ result: string; phase: string }>(`/sessions/${sessionId}/install`, {
+      method: "POST",
+      body: JSON.stringify({
+        target: opts.target ?? "file",
+        skill_dir: opts.skill_dir ?? "",
+        name: opts.name ?? "",
+      }),
+    }),
 };
