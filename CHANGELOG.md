@@ -4,6 +4,40 @@
 
 ## [Unreleased]
 
+### 前沿机制升级 P3 批次(DAG 执行引擎 + 棘轮数据飞轮)
+
+#### Added (新增)
+- 方案 #1 DAG 执行引擎(grounded validation 落地): `core/execution.py` —
+  按拓扑序实际执行 NodeGraph,条件边安全求值(无 eval,支持 ==/!=/>/>=/</<= 与裸键真值),
+  把「图看起来对」升级为「图跑得通」;三类接地失败显式中止并给诊断:
+  成环 → ABORTED / BLOCKED 节点 → FAILED / 条件键无生产者 → ABORTED;
+  节点输出三层发布到上下文(node.id/归一化标题/扁平 slot 键),
+  分支未命中侧下游级联 SKIPPED;`BaseAdapter` 新增 `get_executor`/`get_router`
+  可选扩展点(默认模拟执行 + ConditionRouter);REST 暴露
+  `POST /api/sessions/{id}/execute` 与 `GET /execution/records`,
+  执行历史(上限 20 次)持久化进会话 metadata
+- 方案 #2 棘轮数据飞轮: `core/ratchet_data.py`(RefineRecord + 25 维特征
+  [图结构/补丁 one-hot/差分/分数上下文] + SQLite 线程安全存储,零第三方依赖)
+  与 `core/training.py`(PatchClassifier 梯度提升树,sklearn 可选依赖,
+  样本 <30 或单类别拒绝训练,输出 accuracy/precision/recall/f1 + 特征重要性 Top-10);
+  `/refine` 每次棘轮判定自动沉淀样本(best-effort 不阻断主流程);
+  REST 暴露 `GET /api/flywheel/stats`、`POST /train`、`POST /predict`
+  (预测为咨询式参考,不参与棘轮门控,避免小样本模型错误拦截用户修改)
+
+#### Fixed (修复)
+- F1: CLI `build` 改用 `ratchet.best_graph`(深拷贝)固化产物 — 此前用
+  `session.graph`,refine 后未经验证的图会直接进产物,违反「build 必须用
+  best_graph」硬约束且与 server `/build` 行为分叉
+- F2: CLI `verify` PASS 时沉淀 Voyager 技能(pattern 条目与 server
+  `_store_pattern` 同形状,server 检索端可直接命中)— 此前纯 CLI 用户
+  `goal-studio skills` 恒为空
+- F5: `scaffold` 同步生成 `.signature` 伴随文件 — PR-O 签名校验导致脚手架
+  产物天生无法被 `load-plugins` 加载(断链);adapter-dev.md 补充
+  目录白名单 + 签名标记的安全约束文档
+- F6: mock workflow 图 `l1-branch` 节点补「校验通过」信号 slot — 条件边
+  引用的键此前无任何节点发布,演示图 `/execute` 必然接地失败
+- 执行统计 stats 增加 `pending` 计数(ABORTED 时未触达节点不再从统计中消失)
+
 ## [0.4.0] - 2026-08-15
 
 ### 前沿机制升级 P1 批次(双评估器 + LLM 反思)

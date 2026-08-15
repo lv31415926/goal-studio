@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import click
 from rich.console import Console
@@ -190,6 +191,49 @@ def refine(node_id: str, patch: str, session_dir: str) -> None:
     console.print(f"[green]✓ 节点 {node_id} 已精化 (graph v{new_graph.version})[/green]")
 
 
+def _sediment_pattern(session: Any, score: float) -> None:
+    """Voyager 沉淀(CLI 侧): verify PASS 时写入技能库
+
+    与 server routes/studio.py 的 _store_pattern 保持相同条目形状
+    (category=pattern, key=pattern:{session_id}, value=JSON{goal,l1_nodes,score}),
+    server 检索端(_rank_entries)可直接命中;embedding/骨架合并由 server 侧增强。
+    """
+    import os as _os
+    from uuid import uuid4
+
+    from goal_studio.core.knowledge_store import KnowledgeEntry, LocalFileKnowledgeStore
+    from goal_studio.core.node_graph import NodeLayer
+
+    assert session.graph is not None and session.goal is not None
+    l1_nodes = [
+        {"title": n.title, "description": (n.description or "")[:120]}
+        for n in session.graph.get_layer(NodeLayer.L1_PLANNING)[:8]
+    ]
+    if not l1_nodes:
+        return
+    pat = {
+        "goal": session.goal.goal[:200],
+        "product_type": session.goal.product_type.value,
+        "l1_nodes": l1_nodes,
+        "score": round(score, 1),
+        "session_id": session.id,
+    }
+    path = _os.getenv("GOAL_STUDIO_KNOWLEDGE_ROOT", "") or str(
+        Path.home() / ".goal-studio" / "knowledge.json"
+    )
+    store = LocalFileKnowledgeStore(Path(path))
+    store.put(KnowledgeEntry(
+        id=uuid4().hex[:12],
+        category="pattern",
+        key=f"pattern:{session.id}",
+        value=json.dumps(pat, ensure_ascii=False),
+        source="auto",
+        confidence=min(0.95, 0.5 + score / 200),
+        tags=[],
+        metadata={"session_id": session.id, "score": score},
+    ))
+
+
 @cli.command()
 @click.option("--session-dir", default="./sessions")
 def verify(session_dir: str) -> None:
@@ -245,6 +289,16 @@ def verify(session_dir: str) -> None:
     session.phase = SessionPhase.VERIFY
     sm.save(session)
 
+    # Voyager 技能库沉淀(与 server /validate 的 _store_pattern 语义对齐):
+    # PASS 时把 (goal, L1 骨架, 分数) 写入 knowledge store,供后续 draft few-shot 检索。
+    # CLI 侧为最小实现(无 embedding/骨架合并);失败不阻断 verify 主流程。
+    if report.passed:
+        try:
+            _sediment_pattern(session, report.score)
+            console.print("[green]✓ 已沉淀到技能库(goal-studio skills 可查看)[/green]")
+        except Exception:  # noqa: BLE001
+            pass
+
 
 @cli.command()
 @click.option("--session-dir", default="./sessions")
@@ -280,7 +334,12 @@ def build(session_dir: str, output: str, target: str, dry_run: bool) -> None:
 
     registry = get_default_registry()
     adapter = registry.get_for_goal(session.goal)
-    artifact = adapter.build(session.graph)
+    # 硬约束「build 必须用 best_graph」: 与 server /build 对齐,
+    # 优先历史最佳图(深拷贝防污染),避免 CLI refine 后未经验证的图直接进产物
+    from goal_studio.core.node_graph import NodeGraph
+
+    source_graph = session.ratchet.best_graph or session.graph
+    artifact = adapter.build(NodeGraph.from_dict(source_graph.to_dict()))
 
     # F2: dry-run — 只展示将写入的文件清单,不持久化不导出,phase 不推进
     if dry_run:

@@ -17,10 +17,12 @@ from __future__ import annotations
 
 import importlib.util
 import inspect
+import json
 import logging
 import os
 import sys
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -362,4 +364,21 @@ def scaffold(
     output_path.mkdir(parents=True, exist_ok=True)
     file_path = output_path / f"{file_name}.py"
     file_path.write_text(code, encoding="utf-8")
+    # PR-O 配套: load_plugins 要求 .py 旁存在 .signature 才会加载(信任标记)。
+    # scaffold 同步生成,打通「scaffold → 编辑 → 放入白名单目录 → load-plugins」链路
+    sig_path = output_path / f"{file_name}.signature"
+    sig_path.write_text(
+        json.dumps(
+            {
+                "generated_by": "goal-studio scaffold",
+                "adapter": name,
+                "product_type": product_type,
+                "created_at": datetime.now(UTC).isoformat(),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     return file_path

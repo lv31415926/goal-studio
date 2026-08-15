@@ -310,6 +310,10 @@ print(f"加载了: {loaded}")
 
 `load_from_directory` 扫描目录下所有 `*.py` 文件（跳过 `_` 开头的），import 模块后查找 `BaseAdapter` 子类并实例化注册。已注册的 `product_type` 会静默跳过。
 
+安全约束（PR-O）：
+- **目录白名单** — 仅允许加载 `./adapters/`、`~/.goal-studio/adapters/`，或环境变量 `GOAL_STUDIO_PLUGIN_DIRS`（冒号分隔）声明的目录；
+- **签名标记** — 每个 `xxx.py` 旁边必须存在 `xxx.signature` 文件才会被加载（`goal-studio scaffold` 会自动生成；手工创建的适配器请自行放置，内容任意，作为人工确认的信任标记）。
+
 ::: tip 内置适配器别名
 内置适配器注册时带别名：`skill`↔`技能`、`code`↔`代码`、`doc`↔`文档`、`workflow`↔`工作流`。`registry.get("技能")` 与 `registry.get("skill")` 等价。
 :::

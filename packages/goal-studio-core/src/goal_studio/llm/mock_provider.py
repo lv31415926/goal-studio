@@ -470,7 +470,10 @@ class MockLLMProvider(BaseLLMProvider):
             "nodes": [
                 {"id": "l1-trigger", "layer": 1, "title": "触发分析", "description": f"分析「{goal}」的触发条件", "node_type": "task", "parent_id": None},
                 {"id": "l1-orchestrate", "layer": 1, "title": "步骤编排", "description": "编排工作流步骤", "node_type": "task", "parent_id": None},
-                {"id": "l1-branch", "layer": 1, "title": "条件分支", "description": "设计分支逻辑", "node_type": "task", "parent_id": None},
+                {"id": "l1-branch", "layer": 1, "title": "条件分支", "description": "设计分支逻辑", "node_type": "task", "parent_id": None,
+                 # 接地示范: 条件边的信号键必须由某节点 slots 发布(执行引擎据此求值),
+                 # 否则 /execute 报「条件接地失败」— 这正是 grounded validation 要抓的断裂
+                 "slots": {"校验通过": True}},
                 {"id": "l1-error", "layer": 1, "title": "异常处理", "description": "设计重试和降级", "node_type": "task", "parent_id": None},
                 {"id": "l1-deploy", "layer": 1, "title": "部署执行", "description": "配置执行环境", "node_type": "task", "parent_id": None},
                 {"id": "l2-trigger-analyst", "layer": 2, "title": "触发分析师", "description": "分析触发类型", "node_type": "agent", "parent_id": "l1-trigger"},
