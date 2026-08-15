@@ -14,6 +14,7 @@ from goal_studio.llm.registry import get_llm
 if TYPE_CHECKING:
     from goal_studio.core.artifact_store import LocalFileArtifactStore
     from goal_studio.core.knowledge_store import LocalFileKnowledgeStore
+    from goal_studio.core.ratchet_data import RatchetDataStore
 
 
 @lru_cache(maxsize=1)
@@ -60,6 +61,22 @@ def get_knowledge_store() -> LocalFileKnowledgeStore:
     root_env = os.getenv("GOAL_STUDIO_KNOWLEDGE_ROOT")
     path = Path(root_env) if root_env else Path.home() / ".goal-studio" / "knowledge.json"
     return LocalFileKnowledgeStore(path)
+
+
+@lru_cache(maxsize=1)
+def get_ratchet_store() -> RatchetDataStore:
+    """获取全局 RatchetDataStore(数据飞轮: refine 判定样本沉淀)
+
+    存储路径优先级:
+      1. 环境变量 GOAL_STUDIO_RATCHET_DB (部署/测试隔离)
+      2. 默认 ~/.goal-studio/ratchet_data.db
+    """
+    from goal_studio.core.ratchet_data import RatchetDataStore
+
+    db_env = os.getenv("GOAL_STUDIO_RATCHET_DB")
+    path = Path(db_env) if db_env else Path.home() / ".goal-studio" / "ratchet_data.db"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return RatchetDataStore(path)
 
 
 @lru_cache(maxsize=1)

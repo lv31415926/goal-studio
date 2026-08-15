@@ -15,10 +15,13 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from goal_studio.core.contract import Artifact, GoalContract, Patch, Report
 from goal_studio.core.node_graph import NodeGraph
+
+if TYPE_CHECKING:
+    from goal_studio.core.execution import EdgeRouter, NodeExecutor
 
 
 class BaseAdapter(ABC):
@@ -112,6 +115,24 @@ class BaseAdapter(ABC):
             安装位置或状态信息
         """
         return f"Installation not supported for {self.product_type} adapter"
+
+    # === 执行引擎扩展点(可选,方案 #1 grounded validation) ===
+
+    def get_executor(self) -> NodeExecutor | None:
+        """返回产物特定的节点执行器
+
+        默认 None → ExecutionEngine 使用 DefaultNodeExecutor 模拟执行
+        (发布节点 slots 到上下文,BLOCKED 节点报错)。子类按需覆盖,
+        如 WorkflowAdapter 可编译产物步骤真实回放。
+        """
+        return None
+
+    def get_router(self) -> EdgeRouter | None:
+        """返回产物特定的边路由器
+
+        默认 None → ConditionRouter(可读条件安全求值,无 eval)。
+        """
+        return None
 
     # === 非抽象工具方法 ===
 

@@ -553,6 +553,7 @@ async def refine(
     def _refine_with_lock() -> tuple[Any, NodeGraph, float]:
         with mgr.session_lock(session_id):
             assert s.graph is not None  # endpoint 顶部已 400 校验,此处收窄类型
+            graph_before_dict = s.graph.to_dict()  # 数据飞轮: 补丁前图快照
             s.save_snapshot(patch_summary=patch_sum)
             new_graph = adapter.refine(s.graph, patch)
             report = adapter.validate(new_graph)
@@ -593,6 +594,16 @@ async def refine(
             s.add_dialog(
                 "assistant", f"棘轮判定: {decision.value} (Δ={new_score - old_score:+.1f})"
             )
+            # 方案 #2 数据飞轮: 沉淀 refine 判定样本(best-effort,不阻断主流程)
+            try:
+                from goal_studio_server.routes.execution import record_refine_outcome
+
+                record_refine_outcome(
+                    session_id, s, graph_before_dict, new_graph.to_dict(),
+                    patch, decision.value, old_score, new_score,
+                )
+            except Exception:  # noqa: BLE001
+                pass
             # G1: 失败反思沉淀(Reflexion) — REVERT/EARLY_STOP 时写入 KnowledgeStore
             # P1: LLM 生成教训优先,失败降级确定性模板
             if decision.value in ("revert", "early_stop"):

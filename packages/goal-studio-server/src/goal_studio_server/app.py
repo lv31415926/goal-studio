@@ -26,7 +26,7 @@ from goal_studio_server.logging_config import setup_logging
 
 # F4: metrics 注册表在独立模块,供 app 中间件与 ws/studio 路由共享埋点
 from goal_studio_server.metrics import METRICS
-from goal_studio_server.routes import adapters, sessions, studio, ws
+from goal_studio_server.routes import adapters, execution, sessions, studio, ws
 
 _logger = logging.getLogger(__name__)
 
@@ -190,6 +190,18 @@ def create_app() -> FastAPI:
         studio.router,
         prefix="/api/sessions/{session_id}",
         tags=["studio"],
+        dependencies=[Depends(require_auth)],
+    )
+    app.include_router(
+        execution.router,
+        prefix="/api/sessions/{session_id}",
+        tags=["execution"],
+        dependencies=[Depends(require_auth)],
+    )
+    app.include_router(
+        execution.flywheel_router,
+        prefix="/api/flywheel",
+        tags=["flywheel"],
         dependencies=[Depends(require_auth)],
     )
     app.include_router(
