@@ -2,7 +2,7 @@
 
 本文件记录 goal-studio 的显著变更。遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [0.5.0] - 2026-08-15
 
 ### 前沿机制升级 P3 批次(DAG 执行引擎 + 棘轮数据飞轮)
 
