@@ -16,6 +16,14 @@ from goal_studio.llm.base import BaseLLMProvider, LLMMessage, LLMResponse
 _logger = logging.getLogger(__name__)
 
 
+class EmptyLLMContentError(ValueError):
+    """LLM 返回空 content(如推理模型 max_tokens 被 reasoning_tokens 耗尽)
+
+    与网络/SDK 错误区分: 空 content 重试或降级调用大概率仍为空,
+    不应再触发第二次 LLM 调用(成本翻倍且无效),直接抛出由上层兜底。
+    """
+
+
 class OpenAILLMProvider(BaseLLMProvider):
     """OpenAI Provider"""
 
@@ -191,8 +199,9 @@ class OpenAILLMProvider(BaseLLMProvider):
                             },
                         )
             if not text:
-                # 推理模型 max_tokens 不足或 LLM 返回空: 抛异常让上层 fallback
-                raise ValueError(
+                # 推理模型 max_tokens 不足或 LLM 返回空
+                # C5: 专用异常 — 外层 except 不再触发二次 LLM 调用,直接抛给上层兜底
+                raise EmptyLLMContentError(
                     f"LLM 返回空 content (finish_reason={finish_reason}, "
                     f"max_tokens={max_tokens}); 推理模型可能需要更大 max_tokens"
                 )
@@ -216,6 +225,10 @@ class OpenAILLMProvider(BaseLLMProvider):
                 return super().complete_json(
                     messages, temperature=temperature, max_tokens=max_tokens, **kwargs
                 )
+        except EmptyLLMContentError:
+            # C5: 空 content 不走 fallback(fallback 会再次调用 LLM,大概率仍为空)
+            # 直接抛出 — llm_parser 捕获后走 _fallback_ambiguous 兜底
+            raise
         except Exception as e:
             # 网络错误/SDK 异常: 降级到基类文本解析
             _logger.warning(

@@ -18,6 +18,7 @@ from goal_studio_server.deps import (
     get_artifact_store,
     get_session_manager,
 )
+from goal_studio_server.metrics import METRICS
 from goal_studio_server.models import (
     ArtifactModel,
     DraftRequest,
@@ -129,10 +130,10 @@ async def draft(
     # PR-ROUND-1/B-06: goal 赋值 + draft + 图更新 + 保存整体持 per-session 锁,
     # 避免与并发 /refine(已持锁) 竞争修改同一 session
     loop = asyncio.get_running_loop()
-    lock = mgr._get_session_lock(session_id)
 
+    # P1-3: 使用公共 session_lock CM(含 session_id 校验),不再访问私有 _get_session_lock
     def _draft_with_lock():
-        with lock:
+        with mgr.session_lock(session_id):
             s.goal = goal
             graph = adapter.draft(goal)
             s.update_graph(graph)
@@ -140,7 +141,12 @@ async def draft(
             mgr.save(s)
             return graph
 
-    graph = await loop.run_in_executor(None, _draft_with_lock)
+    METRICS["llm_calls_total"] += 1
+    try:
+        graph = await loop.run_in_executor(None, _draft_with_lock)
+    except Exception:
+        METRICS["llm_errors_total"] += 1
+        raise
     return NodeGraphModel(**graph.to_dict())
 
 
@@ -178,10 +184,10 @@ async def refine(
     # 保证 refine 全流程原子性(避免并发 refine 互相覆盖快照/分数)
     # R3-08: 统一使用 asyncio.get_running_loop()
     loop = asyncio.get_running_loop()
-    lock = mgr._get_session_lock(session_id)
 
+    # P1-3: 使用公共 session_lock CM
     def _refine_with_lock():
-        with lock:
+        with mgr.session_lock(session_id):
             s.save_snapshot(patch_summary=patch_sum)
             new_graph = adapter.refine(s.graph, patch)
             report = adapter.validate(new_graph)
@@ -202,9 +208,14 @@ async def refine(
             mgr.save(s)
             return decision, final_graph, new_score
 
-    decision, final_graph, new_score = await loop.run_in_executor(
-        None, _refine_with_lock
-    )
+    METRICS["llm_calls_total"] += 1
+    try:
+        decision, final_graph, new_score = await loop.run_in_executor(
+            None, _refine_with_lock
+        )
+    except Exception:
+        METRICS["llm_errors_total"] += 1
+        raise
 
     # 构造响应
     messages = {
@@ -245,7 +256,12 @@ async def validate(
     # PR-M: 同步 LLM 调用移入线程池,避免阻塞事件循环
     # R3-08: 统一使用 asyncio.get_running_loop()
     loop = asyncio.get_running_loop()
-    report = await loop.run_in_executor(None, partial(adapter.validate, s.graph))
+    METRICS["llm_calls_total"] += 1
+    try:
+        report = await loop.run_in_executor(None, partial(adapter.validate, s.graph))
+    except Exception:
+        METRICS["llm_errors_total"] += 1
+        raise
     # R3-06: 状态更新纳入 per-session 锁,避免并发修改同一 session
     with mgr.session_lock(session_id):
         s.phase = SessionPhase.VERIFY
@@ -292,7 +308,12 @@ async def build(
     build_graph = NodeGraph.from_dict(source_graph.to_dict())
     # PR-M: 同步 LLM 调用移入线程池,避免阻塞事件循环
     loop = asyncio.get_running_loop()
-    artifact: Artifact = await loop.run_in_executor(None, partial(adapter.build, build_graph))
+    METRICS["llm_calls_total"] += 1
+    try:
+        artifact: Artifact = await loop.run_in_executor(None, partial(adapter.build, build_graph))
+    except Exception:
+        METRICS["llm_errors_total"] += 1
+        raise
     # PR-S3: 产物持久化 + 记录 best_artifact_id,供删除会话时级联清理
     store = get_artifact_store()
     artifact_id = await loop.run_in_executor(

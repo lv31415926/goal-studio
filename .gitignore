@@ -50,3 +50,10 @@ packages/goal-studio-docs/docs/.vitepress/cache/
 # Demo session/artifact data (local only)
 demo-sessions*/
 demo-artifacts*/
+
+# 测试/本地运行残留
+_legacy_out/
+
+# F5: examples 自动生成的构建产物(保留 .gitkeep 占位)
+examples/*/output/*
+!examples/*/output/.gitkeep

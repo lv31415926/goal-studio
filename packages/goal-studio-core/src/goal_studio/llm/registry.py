@@ -62,4 +62,10 @@ def get_llm() -> BaseLLMProvider:
     return _default_llm
 
 
+def reset_llm() -> None:
+    """重置全局 LLM 单例(测试隔离用)"""
+    global _default_llm
+    _default_llm = None
+
+
 _ = LLMProvider

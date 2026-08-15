@@ -52,7 +52,11 @@ def get_adapter_registry() -> AdapterRegistry:
     return get_default_registry()
 
 
-@lru_cache(maxsize=1)
 def get_llm_provider() -> BaseLLMProvider:
-    """获取全局 LLM Provider"""
+    """获取全局 LLM Provider
+
+    A4: 直接委托 goal_studio.llm.registry 的全局单例,消除双层缓存 —
+    configure_llm() 重新配置后立即生效,不再被本层 lru_cache 冻结。
+    测试隔离: 用 goal_studio.llm.registry.reset_llm() 或 dependency_overrides。
+    """
     return get_llm()

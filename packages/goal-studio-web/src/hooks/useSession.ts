@@ -146,6 +146,32 @@ export function useSession() {
   const handlerRef = useRef(handleWSMessage);
   handlerRef.current = handleWSMessage;
 
+  // C6: 共享 WS 连接逻辑(createAndDraft / loadSession 复用,消除重复样板)
+  const connectWs = useCallback((sid: string) => {
+    if (wsRef.current) wsRef.current.close();
+    // R4-08: 传入 ref 包装的 handler,确保 WSClient 始终调用最新 handler
+    const ws = new WSClient(sid, (type, payload, msgSid) =>
+      handlerRef.current(type, payload, msgSid),
+    );
+    // P-LOW-2-7: 订阅 WS 状态变更,驱动 DialogPanel 的 wsStatus(含 reconnecting)
+    ws.onStatusChange = (status) => {
+      switch (status) {
+        case "connected":
+          setWsStatus("connected");
+          break;
+        case "reconnecting":
+          setWsStatus("connecting");
+          break;
+        case "disconnected":
+        case "reconnect_failed":
+          setWsStatus("disconnected");
+          break;
+      }
+    };
+    ws.connect();
+    wsRef.current = ws;
+  }, []);
+
   // 创建会话 + 起草 DAG + 连接 WS
   const createAndDraft = useCallback(
     async (goal: GoalContract, name = "") => {
@@ -168,29 +194,8 @@ export function useSession() {
         setGraph(graph);
         setPhase("visualize");
 
-        // 3. 连接 WebSocket
-        if (wsRef.current) wsRef.current.close();
-        // R4-08: 传入 ref 包装的 handler,确保 WSClient 始终调用最新 handler
-        const ws = new WSClient(s.id, (type, payload, sid) =>
-          handlerRef.current(type, payload, sid),
-        );
-        // P-LOW-2-7: 订阅 WS 状态变更,驱动 DialogPanel 的 wsStatus(含 reconnecting)
-        ws.onStatusChange = (status) => {
-          switch (status) {
-            case "connected":
-              setWsStatus("connected");
-              break;
-            case "reconnecting":
-              setWsStatus("connecting");
-              break;
-            case "disconnected":
-            case "reconnect_failed":
-              setWsStatus("disconnected");
-              break;
-          }
-        };
-        ws.connect();
-        wsRef.current = ws;
+        // 3. 连接 WebSocket (C6: 复用 connectWs)
+        connectWs(s.id);
 
         const updated = await api.getSession(s.id);
         setSession(updated);
@@ -206,7 +211,7 @@ export function useSession() {
         creatingRef.current = false;
       }
     },
-    [setGraph, setPhase, setSessionId],
+    [setGraph, setPhase, setSessionId, connectWs],
   );
 
   // 加载已有会话 (按 ID): 拉取会话详情 + 渲染图 + 连接 WS
@@ -227,27 +232,8 @@ export function useSession() {
         }
         setPhase((s.phase as SessionPhase) ?? "visualize");
 
-        // 连接 WebSocket (与 createAndDraft 一致)
-        if (wsRef.current) wsRef.current.close();
-        const ws = new WSClient(s.id, (type, payload, sid) =>
-          handlerRef.current(type, payload, sid),
-        );
-        ws.onStatusChange = (status) => {
-          switch (status) {
-            case "connected":
-              setWsStatus("connected");
-              break;
-            case "reconnecting":
-              setWsStatus("connecting");
-              break;
-            case "disconnected":
-            case "reconnect_failed":
-              setWsStatus("disconnected");
-              break;
-          }
-        };
-        ws.connect();
-        wsRef.current = ws;
+        // 连接 WebSocket (C6: 复用 connectWs)
+        connectWs(s.id);
         setCanUndo(false);
         return s;
       } catch (e) {
@@ -259,7 +245,7 @@ export function useSession() {
         creatingRef.current = false;
       }
     },
-    [setGraph, setPhase, setSessionId],
+    [setGraph, setPhase, setSessionId, connectWs],
   );
 
   // 通过 WS 发送意图解析

@@ -413,6 +413,3 @@ class RatchetGate:
 # git 回滚钩子(可选,由 SessionManager 或 CLI 注入)
 class GitRollbackHook(Protocol):
     def revert_head(self, message: str) -> None: ...
-
-
-_ = Any

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "goal-studio"
-version = "0.1.0"
+version = "0.3.0"
 description = "可视化 Loop 创作系统 — 把目标变成可复用产物的可视化创作循环"
 readme = "README.md"
 license = "Apache-2.0"

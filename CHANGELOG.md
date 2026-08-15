@@ -4,6 +4,31 @@
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-15
+
+### 缺陷核查修复 (2026-08-15 全量代码审查)
+
+#### Fixed (修复)
+- P0-1: CLI `verify` 与 server `/validate` 棘轮状态分叉 — verify 改用会话级 ratchet 并深拷贝双写 `best_graph`,消除 CLI 验证后 Web build 拿到旧图的缺陷
+- P0-2: 两个包同名 `tests/__init__.py` 导致仓库根目录 pytest 收集失败 — 移除包标记,新增根 `pytest.ini` 统一入口
+- P1-3: ws/studio 路由 4 处访问私有 `SessionManager._get_session_lock` — 全部改用公共 `session_lock()` 上下文管理器
+- A1: `_session_locks` 锁字典随会话数单调增长 — 引入持有者计数 + 超上限(256)清扫空闲锁;WS 断连后清理 `_interim_throttle` 残留
+- C1: CLI `serve` 占位 stub 实现为真实 uvicorn 启动
+- C3: `NodeGraph.add_edge` 同 id 去重由 O(n) 扫描改为 `_edge_ids` 集合 O(1)
+- C4: `PipelineCache.__len__` 补持锁,与类内其他操作一致
+- C5: OpenAI provider 空 content(推理模型 max_tokens 耗尽)不再触发第二次无效 LLM 调用,新增 `EmptyLLMContentError`
+- C6: 前端 `useSession` 抽取 `connectWs`,消除 createAndDraft/loadSession 约 40 行重复
+- C7: `apply_ratchet_decision` 生产 assert 改为显式 RuntimeError
+- F2: CLI `build` 新增 `--dry-run`(只打印文件清单,不落盘不导出)
+- F3: 移除死枚举 `SessionPhase.PAUSED`,`_missing_` 兼容历史持久化数据
+- F4: `ws_connections_active` / `ws_messages_total` / `llm_calls_total` / `llm_errors_total` 四个空指标完成真实埋点(metrics 注册表迁入独立模块)
+- F5: `examples/*/output/` 构建产物移出 git 跟踪(.gitignore + .gitkeep)
+
+#### Changed (变更)
+- 覆盖率门禁 60% → 65%(core/server 实测 67%)
+- CI 新增 `e2e-examples` job: 三个示例全链路离线验证
+- 版本号 0.1.0 → 0.3.0(Phase 3 完成对齐)
+
 ### 生产部署加固 (PR-S1 ~ PR-S3)
 
 #### Added (新增)

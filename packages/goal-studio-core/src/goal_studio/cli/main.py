@@ -194,7 +194,7 @@ def refine(node_id: str, patch: str, session_dir: str) -> None:
 @click.option("--session-dir", default="./sessions")
 def verify(session_dir: str) -> None:
     """三重门控验证"""
-    from goal_studio.core.ratchet_gate import RatchetDecision, RatchetGate
+    from goal_studio.core.node_graph import NodeGraph
 
     sm = SessionManager(session_dir)
     sessions = sm.list_sessions()
@@ -227,21 +227,21 @@ def verify(session_dir: str) -> None:
         for s in report.suggestions:
             console.print(f"  - {s}")
 
-    # 棘轮判定
-    gate = RatchetGate()
-    decision = gate.judge(session.best_score, report.score, session.graph)
-    session.ratchet_history.append({
-        "round": len(session.ratchet_history) + 1,
-        "old_score": session.best_score,
-        "new_score": report.score,
-        "decision": decision.value,
-    })
-    if decision == RatchetDecision.KEEP:
+    # 与 server /validate 语义对齐: verify 非变异操作,不触发 REVERT/快照恢复;
+    # 超越历史最佳时深拷贝同步 session 与 ratchet 两侧的 best_graph,消除 CLI/Server 状态分叉
+    session.current_score = report.score
+    session.ratchet.current_score = report.score
+    if report.score > session.ratchet.best_score:
+        session.ratchet.best_score = report.score
+        session.ratchet.best_graph = NodeGraph.from_dict(session.graph.to_dict())
         session.best_score = report.score
-        session.best_graph = session.graph
-        console.print("[green]✓ 棘轮判定: KEEP (分数提升)[/green]")
+        session.best_graph = NodeGraph.from_dict(session.graph.to_dict())
+        console.print(f"[green]✓ 分数提升,已同步最佳版本 ({report.score:.1f})[/green]")
     else:
-        console.print(f"[yellow]↺ 棘轮判定: {decision.value}[/yellow]")
+        best = session.ratchet.best_score
+        console.print(
+            f"[yellow]↺ 未超越历史最佳 ({best:.1f}),保持 best_graph 不变[/yellow]"
+        )
     session.phase = SessionPhase.VERIFY
     sm.save(session)
 
@@ -250,7 +250,8 @@ def verify(session_dir: str) -> None:
 @click.option("--session-dir", default="./sessions")
 @click.option("--output", "-o", default="./artifacts", help="输出目录")
 @click.option("--target", default="", help="导出目标 (file:// URI, 默认取 output 绝对路径)")
-def build(session_dir: str, output: str, target: str) -> None:
+@click.option("--dry-run", is_flag=True, help="只构建并打印文件清单,不落盘不导出")
+def build(session_dir: str, output: str, target: str, dry_run: bool) -> None:
     """固化产物"""
     from goal_studio.core.artifact_store import LocalFileArtifactStore
 
@@ -281,6 +282,13 @@ def build(session_dir: str, output: str, target: str) -> None:
     adapter = registry.get_for_goal(session.goal)
     artifact = adapter.build(session.graph)
 
+    # F2: dry-run — 只展示将写入的文件清单,不持久化不导出,phase 不推进
+    if dry_run:
+        console.print(f"[cyan]dry-run: 产物含 {len(artifact.files)} 个文件(未落盘)[/cyan]")
+        for rel in artifact.files:
+            console.print(f"  - {rel}")
+        return
+
     # 持久化
     store = LocalFileArtifactStore(output)
     artifact_id = store.save(artifact, note=f"session={session.id}")
@@ -295,11 +303,25 @@ def build(session_dir: str, output: str, target: str) -> None:
 
 
 @cli.command()
-@click.option("--port", default=5173, help="端口")
-def serve(port: int) -> None:
-    """启动 Web 服务"""
-    console.print(f"[cyan]启动 goal-studio Web 服务 (port={port})...[/cyan]")
-    console.print("[yellow]Phase 2 实现: 启动 React 前端 + FastAPI 后端[/yellow]")
+@click.option("--host", default="127.0.0.1", help="监听地址")
+@click.option("--port", default=8000, help="端口(FastAPI 后端,已构建的前端静态文件由其托管)")
+def serve(host: str, port: int) -> None:
+    """启动 Web 服务(FastAPI 后端;前端 dist-app 存在时由后端托管)"""
+    try:
+        import uvicorn
+    except ImportError:
+        console.print("[red]✗ 缺少 uvicorn: pip install uvicorn[/red]")
+        sys.exit(1)
+    try:
+        import goal_studio_server.app  # noqa: F401
+    except ImportError:
+        console.print(
+            "[red]✗ goal-studio-server 未安装: "
+            "pip install -e packages/goal-studio-server[/red]"
+        )
+        sys.exit(1)
+    console.print(f"[cyan]启动 goal-studio 服务: http://{host}:{port}[/cyan]")
+    uvicorn.run("goal_studio_server.app:app", host=host, port=port)
 
 
 @cli.command()

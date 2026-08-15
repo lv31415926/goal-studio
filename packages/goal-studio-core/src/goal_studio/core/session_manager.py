@@ -54,7 +54,14 @@ class SessionPhase(str, Enum):
     VERIFY = "verify"
     BUILD = "build"
     DONE = "done"
-    PAUSED = "paused"
+
+    @classmethod
+    def _missing_(cls, value: object) -> SessionPhase:
+        """兼容历史持久化数据中的已移除阶段值(如 paused),降级为 INIT"""
+        logging.getLogger(__name__).warning(
+            "unknown_session_phase", extra={"value": value}
+        )
+        return cls.INIT
 
 
 @dataclass
@@ -174,8 +181,9 @@ class Session:
         # 同步 ratchet_history
         self.ratchet_history = [r.to_dict() for r in self.ratchet.history]
         self.updated_at = datetime.now(UTC)
-        assert self.graph is not None
-        assert isinstance(self.graph, NodeGraph)
+        if self.graph is None:
+            # 防御性边界: REVERT 无快照且会话本无图等场景,不静默返回 None
+            raise RuntimeError("apply_ratchet_decision: 会话图为空,无法应用棘轮决策")
         return self.graph
 
     def undo(self) -> NodeGraph | None:
@@ -299,26 +307,59 @@ class SessionManager:
         self._lock = threading.RLock()
         # PR-M: per-session 内存锁 — 保护内存状态并发修改(get 返回引用,需调用方在锁内完成修改)
         self._session_locks: dict[str, threading.RLock] = {}
-        self._locks_guard = threading.Lock()  # 保护 _session_locks 字典本身
+        # A1: 锁持有者计数 — 与取锁在同一 _locks_guard 临界区维护,
+        # 保证 holders==0 ⇒ 无持有者/无等待者,空闲锁清扫安全
+        self._lock_holders: dict[str, int] = {}
+        self._locks_guard = threading.Lock()  # 保护 _session_locks/_lock_holders 字典本身
 
-    def _get_session_lock(self, session_id: str) -> threading.RLock:
-        """获取 per-session 可重入锁(PR-M)
+    # A1: per-session 锁字典上限,超过时清扫空闲锁(防长期运行单调增长)
+    _LOCKS_MAX = 256
+
+    def _get_session_lock_unlocked(self, session_id: str) -> threading.RLock:
+        """获取 per-session 可重入锁(调用前必须已持有 _locks_guard)
 
         不同 session 互不阻塞,同 session 串行化内存修改。
         使用 RLock 避免同线程重入死锁(get 内部调用 save 等场景)。
         """
-        with self._locks_guard:
-            if session_id not in self._session_locks:
-                self._session_locks[session_id] = threading.RLock()
-            return self._session_locks[session_id]
+        if session_id not in self._session_locks:
+            self._session_locks[session_id] = threading.RLock()
+        return self._session_locks[session_id]
+
+    def _sweep_idle_locks_unlocked(self) -> None:
+        """清扫空闲锁(调用前必须已持有 _locks_guard)
+
+        仅删除 holders==0(无持有/无等待)且不在 LRU 缓存中的锁。
+        """
+        for sid in list(self._session_locks):
+            if len(self._session_locks) <= self._LOCKS_MAX:
+                break
+            if sid in self._cache or self._lock_holders.get(sid, 0) > 0:
+                continue
+            self._session_locks.pop(sid, None)
 
     @contextmanager
     def session_lock(self, session_id: str) -> Any:
-        """公共 per-session 锁上下文管理器(替代外部调用 _get_session_lock)"""
+        """公共 per-session 锁上下文管理器
+
+        A1: 取锁 + 持有者计数在同一临界区完成;释放时计数归零,
+        锁字典超 _LOCKS_MAX 则清扫空闲锁。
+        """
         _validate_session_id(session_id)
-        lock = self._get_session_lock(session_id)
-        with lock:
-            yield
+        with self._locks_guard:
+            lock = self._get_session_lock_unlocked(session_id)
+            self._lock_holders[session_id] = self._lock_holders.get(session_id, 0) + 1
+        try:
+            with lock:
+                yield
+        finally:
+            with self._locks_guard:
+                remaining = self._lock_holders.get(session_id, 1) - 1
+                if remaining > 0:
+                    self._lock_holders[session_id] = remaining
+                else:
+                    self._lock_holders.pop(session_id, None)
+                if len(self._session_locks) > self._LOCKS_MAX:
+                    self._sweep_idle_locks_unlocked()
 
     def create(
         self, name: str = "", goal: GoalContract | None = None, owner_id: str = ""
@@ -342,8 +383,7 @@ class SessionManager:
         PR-M: per-session 锁包裹缓存/文件加载 + owner_id 校验,返回引用但调用方需在锁内修改
         """
         _validate_session_id(session_id)
-        lock = self._get_session_lock(session_id)
-        with lock:
+        with self.session_lock(session_id):
             with self._lock:
                 if session_id in self._cache:
                     self._cache.move_to_end(session_id)
@@ -374,8 +414,7 @@ class SessionManager:
         """
         # R1-01: save 入口校验 session.id 格式,防止路径遍历
         _validate_session_id(session.id)
-        lock = self._get_session_lock(session.id)
-        with lock:
+        with self.session_lock(session.id):
             session.updated_at = datetime.now(UTC)
             path = self.root / f"{session.id}.json"
             data = json.dumps(session.to_dict(), ensure_ascii=False, indent=2)
@@ -450,8 +489,7 @@ class SessionManager:
         PR-M: per-session 锁包裹整个删除流程,删除流程结束后清理 per-session 锁本身
         """
         _validate_session_id(session_id)
-        lock = self._get_session_lock(session_id)
-        with lock:
+        with self.session_lock(session_id):
             # PR-O: IDOR 校验 — 先获取会话验证所有权
             # R1-02: 同时捕获 PermissionError(无权限删除 → 返回 False)
             if owner_id is not None:
@@ -477,12 +515,10 @@ class SessionManager:
                 if fcntl is not None:
                     fcntl.flock(lock_fd, fcntl.LOCK_UN)
                 os.close(lock_fd)
-            # PR-M: 删除流程结束后清理 per-session 内存锁(避免 _session_locks 无限增长)
-            with self._locks_guard:
-                self._session_locks.pop(session_id, None)
-            # R1-02: 清理磁盘上的 .{session_id}.lock 文件
-            lock_path.unlink(missing_ok=True)
-            return deleted
-
-
-_ = Any
+        # PR-M/A1: 删除流程结束(锁已释放)后强制清理 per-session 锁与计数
+        with self._locks_guard:
+            self._session_locks.pop(session_id, None)
+            self._lock_holders.pop(session_id, None)
+        # R1-02: 清理磁盘上的 .{session_id}.lock 文件
+        lock_path.unlink(missing_ok=True)
+        return deleted

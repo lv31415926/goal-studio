@@ -5,8 +5,6 @@
 """
 from __future__ import annotations
 
-from typing import Any
-
 from goal_studio.core.base_adapter import BaseAdapter
 from goal_studio.core.contract import GoalContract
 
@@ -135,6 +133,3 @@ def _register_builtin_adapters(registry: AdapterRegistry) -> None:
     except ImportError:
         pass
 
-
-# 保留 Any 导入
-_ = Any

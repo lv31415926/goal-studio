@@ -156,6 +156,8 @@ class NodeGraph:
     _edge_endpoints: set[tuple[str, str, str]] = field(
         default_factory=set, repr=False, compare=False
     )
+    # C3: 边 id 索引 — add_edge 同 id 去重 O(1)(替代线性扫描)
+    _edge_ids: set[str] = field(default_factory=set, repr=False, compare=False)
     # PR-M: 线程安全锁,保护并发图操作(RLock 可重入,remove_node 递归调用无死锁)
     # 只读方法(get_descendants/_find_cycle_path/validate/to_dict/topological_order)不加锁,
     # 依赖调用方在 per-session 锁内完成读取
@@ -167,10 +169,13 @@ class NodeGraph:
         self._adj_in.clear()
         # R2-04: 同步重建 _edge_endpoints 索引
         self._edge_endpoints.clear()
+        # C3: 同步重建 _edge_ids 索引
+        self._edge_ids.clear()
         for e in self.edges:
             self._adj_out.setdefault(e.source, []).append(e.target)
             self._adj_in.setdefault(e.target, []).append(e.source)
             self._edge_endpoints.add((e.source, e.target, e.edge_type))
+            self._edge_ids.add(e.id)
 
     def add_node(self, node: Node) -> None:
         """添加节点"""
@@ -204,6 +209,8 @@ class NodeGraph:
             self.edges = [
                 e for e in self.edges if e.source != node_id and e.target != node_id
             ]
+            # C3: 同步重建 _edge_ids(remove_node 已对 edges 做 O(n) 过滤,重建同阶)
+            self._edge_ids = {e.id for e in self.edges}
             # R2-04: 同步移除 _edge_endpoints 中相关条目
             self._edge_endpoints = {
                 (s, t, et) for (s, t, et) in self._edge_endpoints
@@ -245,13 +252,13 @@ class NodeGraph:
                 raise ValueError(
                     f"Edge {edge.source} -> {edge.target} would create a cycle"
                 )
-            # P-LOW-2-2 + R2-04: 去重 — 同 id 或同 (source, target, edge_type) 跳过(O(1) set 查询)
-            for existing in self.edges:
-                if existing.id == edge.id:
-                    return
+            # P-LOW-2-2 + R2-04 + C3: 去重 — 同 id 或同三元组跳过(O(1) set 查询)
+            if edge.id in self._edge_ids:
+                return
             if (edge.source, edge.target, edge.edge_type) in self._edge_endpoints:
                 return
             self.edges.append(edge)
+            self._edge_ids.add(edge.id)
             self._edge_endpoints.add((edge.source, edge.target, edge.edge_type))
             # PR-Q: 维护邻接表索引
             self._adj_out.setdefault(edge.source, []).append(edge.target)
@@ -263,6 +270,8 @@ class NodeGraph:
             for i, e in enumerate(self.edges):
                 if e.id == edge_id:
                     self.edges.pop(i)
+                    # C3: 同步移除 _edge_ids 索引
+                    self._edge_ids.discard(e.id)
                     # R2-04: 同步移除 _edge_endpoints 索引
                     self._edge_endpoints.discard((e.source, e.target, e.edge_type))
                     # 同步清理邻接表
@@ -386,7 +395,12 @@ class NodeGraph:
         for e in self.edges:
             expected_adj_out.setdefault(e.source, []).append(e.target)
             expected_adj_in.setdefault(e.target, []).append(e.source)
-        if expected_adj_out != self._adj_out or expected_adj_in != self._adj_in:
+        # C3: _edge_ids 纳入一致性校验,失配时随邻接表一起自愈重建
+        if (
+            expected_adj_out != self._adj_out
+            or expected_adj_in != self._adj_in
+            or {e.id for e in self.edges} != self._edge_ids
+        ):
             # 自动重建(而不是抛异常,因为 from_dict 已调用 _build_adjacency,此处仅兜底)
             self._build_adjacency()
 

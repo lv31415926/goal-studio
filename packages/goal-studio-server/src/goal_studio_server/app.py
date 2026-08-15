@@ -23,22 +23,15 @@ from fastapi.staticfiles import StaticFiles
 from goal_studio_server.auth import require_auth, require_metrics_auth
 from goal_studio_server.deps import get_session_manager
 from goal_studio_server.logging_config import setup_logging
+
+# F4: metrics 注册表在独立模块,供 app 中间件与 ws/studio 路由共享埋点
+from goal_studio_server.metrics import METRICS
 from goal_studio_server.routes import adapters, sessions, studio, ws
 
 _logger = logging.getLogger(__name__)
 
 # PR-S3: 进程启动时间(用于健康检查 uptime)
 _START_TIME = time.time()
-
-# PR-Q: 轻量级 metrics 收集(不引入 prometheus_client 依赖)
-_metrics: dict = {
-    "http_requests_total": defaultdict(int),
-    "http_request_duration_seconds": defaultdict(list),
-    "ws_connections_active": 0,
-    "ws_messages_total": 0,
-    "llm_calls_total": 0,
-    "llm_errors_total": 0,
-}
 
 # PR-ROUND-1/A-09: 路径参数模板化,避免 session_id 进入标签导致基数爆炸
 _PATH_PARAM_PATTERN = re.compile(r"/[a-f0-9]{12}(?=/|$)")
@@ -90,7 +83,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="goal-studio",
         description="可视化 Loop 创作系统 — REST + WebSocket",
-        version="0.1.0",
+        version="0.3.0",
         lifespan=lifespan,
     )
 
@@ -136,8 +129,8 @@ def create_app() -> FastAPI:
         # A-09: 将 12 位十六进制 session_id 替换为 {id},避免标签无限增长
         normalized_path = _PATH_PARAM_PATTERN.sub("/{id}", path)
         label = f"{method}_{normalized_path}"
-        _metrics["http_requests_total"][label] += 1
-        durations = _metrics["http_request_duration_seconds"][label]
+        METRICS["http_requests_total"][label] += 1
+        durations = METRICS["http_request_duration_seconds"][label]
         durations.append(duration)
         # 只保留最近 100 个延迟样本
         if len(durations) > _METRICS_MAX_SAMPLES:
@@ -220,7 +213,7 @@ def create_app() -> FastAPI:
         from goal_studio_server.auth import is_production
         return {
             "status": "ok",
-            "version": "0.1.0",
+            "version": "0.3.0",
             "mode": "production" if is_production() else "dev",
             "uptime_seconds": round(time.time() - _START_TIME, 1),
         }
@@ -230,7 +223,7 @@ def create_app() -> FastAPI:
     @app.get("/metrics", dependencies=[Depends(require_metrics_auth)])
     async def metrics():
         lines = []
-        for key, val in _metrics.items():
+        for key, val in METRICS.items():
             if isinstance(val, defaultdict):
                 # 计数器(int) 直接输出; 时长样本(list) 输出均值
                 for label, samples in val.items():

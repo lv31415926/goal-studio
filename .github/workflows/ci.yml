@@ -41,7 +41,7 @@ jobs:
       - name: Test
         run: |
           cd packages/goal-studio-core
-          pytest --cov=goal_studio --cov-fail-under=60
+          pytest --cov=goal_studio --cov-fail-under=65
 
   # P-LOW-2-10: server 包测试 job
   server-test:
@@ -77,7 +77,7 @@ jobs:
           pip-audit
       - name: Test server
         run: |
-          pytest packages/goal-studio-server/tests --cov=goal_studio_server --cov-fail-under=60 -v
+          pytest packages/goal-studio-server/tests --cov=goal_studio_server --cov-fail-under=65 -v
 
   web-test:
     runs-on: ubuntu-latest
@@ -117,6 +117,32 @@ jobs:
         run: |
           cd packages/goal-studio-web
           pnpm test
+
+  # E2E: examples 全链路(draft→refine→verify→build→export,离线 mock LLM)
+  e2e-examples:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: packages/goal-studio-core/pyproject.toml
+      - name: Install core
+        run: pip install -e packages/goal-studio-core
+      - name: Run examples end-to-end
+        env:
+          GOAL_STUDIO_LLM_PROVIDER: mock
+        run: |
+          python examples/create-skill/run.py
+          python examples/create-api/run.py
+          python examples/create-report/run.py
+      - name: Verify outputs generated
+        run: |
+          test -f examples/create-skill/output/*/0.1.0/files/SKILL.md
+          test -f examples/create-api/output/*/0.1.0/files/src/main.py
+          test -f examples/create-report/output/*/0.1.0/files/document.md
 
   # PR-S2: Python 包构建验证 — 确保 sdist 与 wheel 可构建、可安装
   python-build:

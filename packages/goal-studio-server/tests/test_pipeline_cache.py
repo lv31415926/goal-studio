@@ -51,3 +51,27 @@ def test_pipeline_cache_touch_resets_ttl():
     cache.touch("s1")  # 重置 TTL
     time.sleep(0.2)  # 距 put 已 0.4s,但距 touch 仅 0.2s
     assert cache.get("s1") is not None
+@_skip_no_cache
+def test_pipeline_cache_len_thread_safe():
+    """C4: __len__ 持锁 — 并发 put/get/len 不抛异常且结果有界"""
+    import threading
+
+    cache = PipelineCache(maxsize=8, ttl=9999)
+    errors: list[Exception] = []
+
+    def worker(prefix: str) -> None:
+        try:
+            for i in range(50):
+                cache.put(f"{prefix}-{i}", object())
+                cache.get(f"{prefix}-{i}")
+                len(cache)
+        except Exception as e:  # noqa: BLE001
+            errors.append(e)
+
+    threads = [threading.Thread(target=worker, args=(f"t{n}",)) for n in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert not errors
+    assert len(cache) <= 8

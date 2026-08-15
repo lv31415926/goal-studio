@@ -49,9 +49,10 @@ def client(tmp_path, monkeypatch):
     import goal_studio_server.deps as deps
     from goal_studio_server.deps import get_llm_provider, get_session_manager
 
-    # 清除 lru_cache
+    # 清除 lru_cache / LLM 单例(A4: get_llm_provider 已无 lru_cache,改用 reset_llm)
     deps.get_session_manager.cache_clear()
-    deps.get_llm_provider.cache_clear()
+    from goal_studio.llm import registry as llm_registry
+    llm_registry.reset_llm()
 
     # Mock LLM: 使用 FastAPI dependency_overrides 覆盖 get_llm_provider
     mock_llm = _MockLLMProvider()

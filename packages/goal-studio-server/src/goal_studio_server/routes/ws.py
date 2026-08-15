@@ -42,6 +42,7 @@ from goal_studio_server.deps import (
     get_llm_provider,
     get_session_manager,
 )
+from goal_studio_server.metrics import METRICS
 from goal_studio_server.ws_protocol import (
     ClientMessage,
     msg_action_executed,
@@ -120,7 +121,9 @@ class PipelineCache:
         return self.get(session_id) is not None
 
     def __len__(self) -> int:
-        return len(self._store)
+        # C4: OrderedDict 读取同样需要持锁(与类内其他操作一致)
+        with self._lock:
+            return len(self._store)
 
 
 # 会话级 pipeline 缓存: LRU + TTL + 加锁(替代裸 dict)
@@ -235,12 +238,12 @@ async def _handle_intent_parse(
 
     # PR-M: 复用 SessionManager 的 per-session 锁,串行化同 session 的 pipeline 处理 + 状态更新
     s = mgr.get(session_id)
-    lock = mgr._get_session_lock(session_id)
     loop = asyncio.get_event_loop()
 
     # 在线程池中持锁执行 pipeline.process()(同步 LLM 调用,避免阻塞事件循环)
+    # P1-3: 使用公共 session_lock CM(含 session_id 校验),不再访问私有 _get_session_lock
     def _process_with_lock():
-        with lock:
+        with mgr.session_lock(session_id):
             # 同步最新图到 pipeline
             if s.graph:
                 pipeline.update_graph(s.graph)
@@ -250,6 +253,9 @@ async def _handle_intent_parse(
             return pipeline.process(text=text, is_mobile=is_mobile, force=force)
 
     result = await loop.run_in_executor(None, _process_with_lock)
+    METRICS["llm_calls_total"] += 1
+    if result.error:
+        METRICS["llm_errors_total"] += 1
 
     # 推送 Layer 3 结果
     if result.intent:
@@ -278,7 +284,7 @@ async def _handle_intent_parse(
             return
         if result.final_graph:
             # PR-M: 状态更新加锁,避免并发修改同一 session(mgr.save 内部 RLock 可重入,无死锁)
-            with lock:
+            with mgr.session_lock(session_id):
                 s.update_graph(result.final_graph)
                 s.phase = SessionPhase.REFINE
                 s.add_dialog("user", text)
@@ -381,10 +387,10 @@ async def _handle_voice_chunk(
         _interim_throttle[session_id] = {"last_text": text, "last_ts": now}
 
     loop = asyncio.get_event_loop()
-    lock = mgr._get_session_lock(session_id)
     # PR-M: 复用 per-session 锁,串行化同 session 的 pipeline 读取(避免 process 并发修改 graph)
+    # P1-3: 使用公共 session_lock CM
     def _parse_with_lock():
-        with lock:
+        with mgr.session_lock(session_id):
             # R1-12: 解析前同步最新图到 pipeline,避免使用过期 graph
             s = mgr.get(session_id)
             if s.graph:
@@ -508,6 +514,7 @@ async def session_ws(
     await ws.accept()
     # R3-10: 注册活跃连接,供 delete_session 主动关闭
     _register_connection(session_id, ws)
+    METRICS["ws_connections_active"] += 1
     _logger.info("ws_connected", extra={"session_id": session_id, "connection_id": connection_id})
 
     try:
@@ -530,6 +537,7 @@ async def session_ws(
             _active_connections[session_id] = max(0, _active_connections.get(session_id, 0) - 1)
             if _active_connections.get(session_id, 0) == 0:
                 _active_connections.pop(session_id, None)
+        METRICS["ws_connections_active"] -= 1
         # R3-10: 注销连接
         _unregister_connection(session_id, ws)
         return
@@ -572,6 +580,7 @@ async def session_ws(
                 msg = ClientMessage.model_validate(data)
                 msg_type = msg.type
                 payload = msg.payload
+                METRICS["ws_messages_total"] += 1
             except json.JSONDecodeError:
                 await _send_json(
                     ws, msg_error(session_id, "invalid JSON", "bad_json").model_dump()
@@ -649,6 +658,9 @@ async def session_ws(
             _active_connections[session_id] = max(0, _active_connections.get(session_id, 0) - 1)
             if _active_connections.get(session_id, 0) == 0:
                 _active_connections.pop(session_id, None)
+                # A1: 会话无活跃连接时清理 interim 节流状态(防断连残留)
+                _interim_throttle.pop(session_id, None)
+        METRICS["ws_connections_active"] -= 1
         # R3-10: 注销活跃连接
         _unregister_connection(session_id, ws)
         _ws_msg_timestamps.pop(connection_id, None)
