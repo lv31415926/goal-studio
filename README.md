@@ -27,7 +27,7 @@
 goal-studio 尚未发布到 PyPI,目前需从源码安装:
 
 ```bash
-git clone https://github.com/goal-studio/goal-studio.git
+git clone https://github.com/lv31415926/goal-studio.git
 cd goal-studio
 
 # 安装 Python 核心与服务端
