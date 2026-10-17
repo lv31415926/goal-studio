@@ -35,3 +35,8 @@ dev_eval 25/25（新增L2-19四科映射全覆盖断言）。
 逐错题独立入库(带exam_paper_id/qno/分值)→exam-summary派生整卷表→每题四段式独立分析合并PDF；
 ③新增考点簇定期总结：clusters命令(近N天开放簇按丢分排序+错因分布+断点样本)→簇深潜(共性错因→
 考点精讲→3变式)→可配周历(cron需确认)。引擎+exam-init/exam-summary/clusters三命令。
+## v1.6.0 (2026-10-17, 用户裁决：解答挂考点+默认PDF)
+①deep-analysis 第四节升级为"每步三件套"（动作依据+考点解析说明+易错回扣），含采分点权重提示与
+"一题一策"速记卡（识别信号→起手式→最易死在哪步）；②报告交付形态默认 PDF：新增 scripts/render_pdf.py
+（Chrome/Chromium/Edge headless 跨平台自动发现，降级链 pdf_generator→HTML 直发），SKILL §7 写入交付契约。
+dev_eval 30/30（+L2-24 渲染回归）。
